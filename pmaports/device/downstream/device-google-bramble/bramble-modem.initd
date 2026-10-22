@@ -34,8 +34,11 @@ start() {
 	start-stop-daemon -S -b -m -p "$rmtfs_pidfile" -x /usr/bin/rmtfs -- -P
 	start-stop-daemon -S -b -m -p "$hold_pidfile" -x /bin/sh -- \
 		-c 'exec sleep 2147483647 < /dev/subsys_modem'
-	# Waits up to 60 s for the WLAN firmware service, so run it detached.
-	start-stop-daemon -S -b -x /usr/libexec/bramble-wlfw-bdf
+	# One-shot helper that waits up to 60 s for the WLAN firmware service.
+	# Run it as a plain background job: OpenRC marks the service "crashed"
+	# when a process started with start-stop-daemon exits.
+	( /usr/libexec/bramble-wlfw-bdf 2>&1 | logger -t bramble-wlfw-bdf ) \
+		< /dev/null > /dev/null 2>&1 &
 	eend $?
 }
 
