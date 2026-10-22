@@ -1,0 +1,53 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] ipv4: handle RTA_GATEWAY set to 0
+
+This tree carries a backport of the 5.2-era fc_gw_family rework, but not
+the mainline follow-up that treats RTA_GATEWAY = 0.0.0.0 as "no gateway".
+NetworkManager (seen with 1.58) sends RTA_GATEWAY = 0 for on-link routes.
+The kernel then does a gateway lookup for 0.0.0.0 and rejects the prefix
+route with -ENETUNREACH "Nexthop has invalid gateway", so connections
+come up with an address but without the subnet or default route.
+
+Match mainline: only set fc_gw_family when the gateway is non-zero, and
+ignore a zero gateway when matching multipath nexthops.
+
+---
+--- a/net/ipv4/fib_frontend.c	2026-10-22 23:18:39.423737746 +0100
++++ b/net/ipv4/fib_frontend.c	2026-10-22 23:18:39.445243438 +0100
+@@ -755,8 +755,9 @@
+ 			break;
+ 		case RTA_GATEWAY:
+ 			has_gw = true;
+-			cfg->fc_gw_family = AF_INET;
+ 			cfg->fc_gw4 = nla_get_be32(attr);
++			if (cfg->fc_gw4)
++				cfg->fc_gw_family = AF_INET;
+ 			break;
+ 		case RTA_VIA:
+ 			has_via = true;
+--- a/net/ipv4/fib_semantics.c	2026-10-22 23:18:39.423835518 +0100
++++ b/net/ipv4/fib_semantics.c	2026-10-22 23:18:39.445462322 +0100
+@@ -659,8 +659,9 @@
+ 				return -EINVAL;
+ 			}
+ 			if (nla) {
+-				fib_cfg.fc_gw_family = AF_INET;
+ 				fib_cfg.fc_gw4 = nla_get_in_addr(nla);
++				if (fib_cfg.fc_gw4)
++					fib_cfg.fc_gw_family = AF_INET;
+ 			} else if (nlav) {
+ 				ret = fib_gw_from_via(&fib_cfg, nlav, extack);
+ 				if (ret)
+@@ -863,8 +864,10 @@
+ 			}
+ 
+ 			if (nla) {
+-				if (nh->fib_nh_gw_family != AF_INET ||
+-				    nla_get_in_addr(nla) != nh->fib_nh_gw4)
++				__be32 gw = nla_get_in_addr(nla);
++
++				if (gw && (nh->fib_nh_gw_family != AF_INET ||
++					   gw != nh->fib_nh_gw4))
+ 					return 1;
+ 			} else if (nlav) {
+ 				struct fib_config cfg2;
