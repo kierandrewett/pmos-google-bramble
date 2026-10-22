@@ -6039,3 +6039,12 @@ CONFIG_PID_IN_CONTEXTIDR=y
 # CONFIG_ARM64_RELOC_TEST is not set
 CONFIG_ARM64_STRICT_BREAK_BEFORE_MAKE=y
 # CONFIG_CORESIGHT is not set
+
+# postmarketOS: framebuffer console on the bootloader splash buffer
+# (simple-framebuffer). Only active when the DTB has a simple-framebuffer node.
+CONFIG_FB_SIMPLE=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
+CONFIG_FONTS=y
+CONFIG_FONT_8x16=y
+CONFIG_FONT_SUN12x22=y

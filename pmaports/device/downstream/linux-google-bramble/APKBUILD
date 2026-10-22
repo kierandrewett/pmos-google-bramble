@@ -3,7 +3,7 @@
 maintainer=""
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=2
+pkgrel=4
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -18,14 +18,14 @@ makedepends="
 	bash
 	bc
 	bison
-	clang
+	clang16
 	devicepkg-dev
 	elfutils-dev
 	findutils
 	flex
 	linux-headers
 	lld
-	llvm
+	llvm16
 	lz4
 	openssl-dev
 	perl
@@ -42,8 +42,16 @@ _outdir="out"
 _config="config-${pkgname#linux-}.$arch"
 _flavor="${pkgname#linux-}"
 
+# Built with clang 16 (the oldest clang in Alpine, closest to the Android
+# clang 12 that LineageOS uses). This build is verified on the device: it
+# boots LineageOS recovery with our modules. The default clang was not
+# verified on the device.
+# LLVM=1 takes clang, llvm-ar, llvm-nm, ... from PATH; ld.lld comes from lld.
+_llvm_path="/usr/lib/llvm16/bin"
+
 prepare() {
 	default_prepare
+	export PATH="$_llvm_path:$PATH"
 	export LLVM=1
 	export REPLACE_GCCH=0
 	sed -i '/dtbo-redfin/d; /dtbo-barbet/d' "$builddir"/scripts/Makefile.dtbo
@@ -53,11 +61,13 @@ prepare() {
 
 build() {
 	unset LDFLAGS
+	export PATH="$_llvm_path:$PATH"
 	make -j"${JOBS:-4}" O="$_outdir" ARCH="$_carch" LLVM=1 KBUILD_LDFLAGS="--threads=4" \
 		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))"-postmarketOS
 }
 
 package() {
+	export PATH="$_llvm_path:$PATH"
 	export KERNEL_IMAGE_NAME="Image.lz4"
 	downstreamkernel_package "$builddir" "$pkgdir" "$_carch" \
 		"${pkgname#linux-}" "$_outdir"
@@ -77,7 +87,7 @@ package() {
 }
 sha512sums="
 da0896c0d0a08308a7eae52cc40505a17914a9adc981bce53c114af608354daf43b0ad3098696efc50547dcd09fc3cff7981001737219c953a41182ed8f74add  linux-google-bramble-2af5306961aebce4cc30098c9f12a09f8d906906.tar.gz
-b6f812532fddf12e01459b90baa460bba18970fc49586213997823935cb501c4ec35a0688b60c75a2e52052ad64c00a243339532fd8acbdfe725e8d9c032b205  config-google-bramble.aarch64
+8220b5657be376ab2be2f2513bd36fbdb3977edae4778e8472dc7faa346f4d2c19ff4cbb2f92fcb484bfbf8d9ebbc0f8e9f4e010814315cafdda767cc1f24c82  config-google-bramble.aarch64
 4269ab70bc24f5c9315a1a448f3f79cae6a2f1446b0832450886a1cc3f6103155f1564a3ba506ba3a9259d12202b2dd22a984e0b808dbce692a6c74656d2d3b3  0001-fbmem-guard-msm-ioctl-v2-hooks.patch
 177e68d0fde463c2c5b872d01acebeda0a64a1f7452f5a521776099fcd42f85c2d9aa84a9fbcd0740d8f7b53a902c4aed15cbb9f879195eb2c6a0669ca0dad01  0002-drm-msm-link-fbdev-into-msm_drm-module.patch
 "
