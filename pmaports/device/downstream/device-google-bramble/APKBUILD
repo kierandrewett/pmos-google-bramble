@@ -1,0 +1,85 @@
+# Reference: <https://postmarketos.org/devicepkg>
+maintainer="Yurii Bishchuk <astellias@gmail.com>"
+pkgname=device-google-bramble
+pkgver=1
+pkgrel=11
+pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
+url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
+arch="aarch64"
+license="MIT"
+depends="
+	android-tools
+	linux-google-bramble
+	postmarketos-base
+	postmarketos-base-downstream
+	seatd
+	libdrm
+	"
+makedepends="
+	devicepkg-dev
+	libdrm-dev
+	gcc
+	"
+source="
+	deviceinfo
+	modules-initfs
+	lito-v2.dtb
+	initfs-hook.sh
+	fix_drm_formats.c
+	90-google-bramble.rules
+	bramble-display.sh
+	phoc.ini
+	start_gui.sh
+	10-bramble-env.conf
+	bramble-environment.conf
+	"
+options="!archcheck !check"
+subpackages="$pkgname-udev"
+
+build() {
+	devicepkg_build "$startdir" "$pkgname"
+	${CC:-gcc} -O2 -fPIC -shared -I/usr/include/libdrm \
+		"$srcdir"/fix_drm_formats.c -o libfix_drm_formats.so -ldrm -ldl
+}
+
+package() {
+	devicepkg_package "$startdir" "$pkgname"
+
+	# Device Tree
+	install -Dm644 "$srcdir"/lito-v2.dtb "$pkgdir"/usr/share/dtb/lito-v2.dtb
+
+	# Qualcomm MSM DRM fix (FourCC duplicate assert, monotonic clock, udev touch, faccessat)
+	install -Dm755 libfix_drm_formats.so "$pkgdir"/usr/lib/libfix_drm_formats.so
+
+	# Udev rules for touchscreen & display
+	install -Dm644 "$srcdir"/90-google-bramble.rules "$pkgdir"/usr/lib/udev/rules.d/90-google-bramble.rules
+
+	# Global environment profile
+	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/etc/profile.d/bramble-display.sh
+	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/usr/share/tinydm/env-wayland.d/20-bramble.sh
+
+	# Systemd manager default environment drop-ins (system & user sessions)
+	install -Dm644 "$srcdir"/10-bramble-env.conf "$pkgdir"/etc/systemd/system.conf.d/10-bramble.conf
+	install -Dm644 "$srcdir"/10-bramble-env.conf "$pkgdir"/etc/systemd/user.conf.d/10-bramble.conf
+	install -Dm644 "$srcdir"/bramble-environment.conf "$pkgdir"/etc/environment.d/10-bramble.conf
+
+	# Phosh & Phrog (greeter) display scaling & config
+	install -Dm644 "$srcdir"/phoc.ini "$pkgdir"/etc/phosh/phoc.ini
+	install -Dm644 "$srcdir"/phoc.ini "$pkgdir"/etc/phrog/phoc.ini
+
+	# Interactive mobile GUI launcher
+	install -Dm755 "$srcdir"/start_gui.sh "$pkgdir"/usr/bin/start_gui.sh
+}
+sha512sums="
+9ccea2bbe170cc556da903ebca922d4cc3d78cc6b609f0e407e5bd92a8a05ccb9986f11161607880abb44b13ba6415a4d77708e2aee632eaf2ebc24d3e586607  deviceinfo
+816b8c5caa8e6dc245ee290b9ae8c9d6b16bd739f372807e454a516dc3c841d439deb1f4d00eaac0f6e3c4b3b77bbe1e5c6673c75f707928f637978f8548bdcc  modules-initfs
+9d3f5f1781ccf9801ee6470aa9cccdc8c79c66c4f35553d0d30aca9f701c0fb14523e26399004e5affe132cd01d3f5119c278688335ce7c2844a404828673333  lito-v2.dtb
+16d2f1c23b7d495dc99c7c7c539caadf6a032a2c589d8739916b96e4760b2491eaeb47aacf454c86a2fdefff2033d4d5475abb5963ed41d725d4d786c751906b  initfs-hook.sh
+156a5472e81f1251559a18772ac95d412a577ade64d732c8395213380c4187fcbacb8af8e0455f73209292d8c5c7fa923fff20b2445eda8915bb9960f216463a  fix_drm_formats.c
+47522581a8228c1cd2da1a0920b847c7c483638a1ac02cb304478dbfd3eff24538d2f3ba9c927131aee7540f0e02de04ea8cf46f554c0ee8f512b2cd6107c35c  90-google-bramble.rules
+a5d44b215e552b22f2bb984b435c5aeb3dc03d83ad0a81e1d43783e68b234a82a04be8015490f2d200e1f20b08524c03bb9cdacb21520f257f5d581ebc6845bd  bramble-display.sh
+0cb295e52c929d8a498ad0d1d18ddffdbd6b5a29d15fca57c102fc055cdf908f36ee4fa538415b4679d4aa071da393a9cf44a6c61f749e09f05a3201139f079f  phoc.ini
+27f890feb672dc06c404415553bb289d0f576a3fafef368246a8a3364a47682a5a46e9b00fb7c76a67e179ed90d064c04f162401c5198d1183dc7764647e945d  start_gui.sh
+01e3fe0f7c20f42e0f2e6f1e873942dc8e533b3ae2a382152acd9be28f6fb580649a38ead9363b65dbc3d88163a7c733d41d41bc7a648cf0feef3c5196720cec  10-bramble-env.conf
+6e26ebd785257a36ae910acc9fc009e5136fa00c716d71674f3daf4bcea459e1fa855dca911a1f92fd0dd6a0fc6786c5557aa3d7b3e7bcd4641f480bb926d2d3  bramble-environment.conf
+"

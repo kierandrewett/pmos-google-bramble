@@ -1,0 +1,14 @@
+# ==============================================================================
+# 90-google-bramble.rules: Hardware udev rules for Google Pixel 4a (5G)
+# ==============================================================================
+
+# 1. Touchscreen: FocalTech FT5446 / fts (/dev/input/event2)
+# Ensure libinput tags the device as a multi-touch touchscreen and maps it to DSI-1 on seat0
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="fts", ENV{ID_INPUT}="1", ENV{ID_INPUT_TOUCHSCREEN}="1", ENV{ID_INPUT_KEYBOARD}="0", ENV{ID_SEAT}="seat0", TAG+="seat", ENV{WL_OUTPUT}="DSI-1"
+
+# 2. DRM / KMS Direct Rendering Infrastructure
+SUBSYSTEM=="drm", KERNEL=="card*", MODE="0666", GROUP="video"
+SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666", GROUP="video"
+
+# 3. OLED Display Backlight Permissions
+SUBSYSTEM=="backlight", ACTION=="add", ATTR{brightness}="1023", RUN+="/bin/chmod 0666 /sys/class/backlight/panel0-backlight/brightness"

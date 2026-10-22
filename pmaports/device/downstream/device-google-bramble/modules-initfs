@@ -1,0 +1,54 @@
+# Early boot and hardware modules for Google Pixel 4a (5G) (bramble / SM7250)
+
+# Core, TrustZone & Hardware Watchdog (prevents watchdog reboot)
+msm_ipc_logging
+qtee_shm_bridge
+qcom_hwspinlock
+smem
+msm_minidump
+early_random
+watchdog_v2
+
+# Clocks, Power, Bus & Regulators
+pinctrl-msm
+pinctrl-spmi-gpio
+pinctrl-lito
+cmd-db
+clk-rpmh
+qcom-rpmh
+qcom-pdc
+gcc-lito
+dispcc-lito
+spmi-pmic-arb
+qpnp-revid
+refgen
+rpmh-regulator
+qpnp-amoled-regulator
+tps-regulator
+slg51000-regulator
+regmap-spmi
+qcom-spmi-pmic
+qpnp-power-on
+
+# UFS Storage
+phy-qcom-ufs
+phy-qcom-ufs-qmp-v4-lito
+ufshcd-core
+ufshcd-pltfrm
+ufs_qcom
+
+# USB Gadget & DWC3 Controller
+phy-generic
+phy-msm-ssusb-qmp
+phy-msm-snps-hs
+dwc3
+usb-dwc3-msm
+dwc3-qcom
+roles
+tcpm
+qpnp_pdphy
+
+# Display & Touch
+msm_drm
+touchscreen_tbn
+ftm5
