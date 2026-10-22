@@ -1,0 +1,38 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] fbmem: only use fb_ioctl_v2 hooks with CONFIG_FB_MSM
+
+struct fb_ops only has fb_ioctl_v2 and fb_compat_ioctl_v2 when
+CONFIG_FB_MSM is set. The redbull kernel does not build CONFIG_FB at
+all for Android, so this path was never compiled. postmarketOS needs
+CONFIG_FB for the framebuffer console, which exposed the build error.
+
+--- a/drivers/video/fbdev/core/fbmem.c
++++ b/drivers/video/fbdev/core/fbmem.c
+@@ -1242,9 +1242,12 @@
+ 		if (!lock_fb_info(info))
+ 			return -ENODEV;
+ 		fb = info->fbops;
++#if defined(CONFIG_FB_MSM)
+ 		if (fb->fb_ioctl_v2)
+ 			ret = fb->fb_ioctl_v2(info, cmd, arg, file);
+-		else if (fb->fb_ioctl)
++		else
++#endif
++		if (fb->fb_ioctl)
+ 			ret = fb->fb_ioctl(info, cmd, arg);
+ 		else
+ 			ret = -ENOTTY;
+@@ -1401,9 +1404,12 @@
+ 		break;
+ 
+ 	default:
++#if defined(CONFIG_FB_MSM)
+ 		if (fb->fb_compat_ioctl_v2)
+ 			ret = fb->fb_compat_ioctl_v2(info, cmd, arg, file);
+-		else if (fb->fb_compat_ioctl)
++		else
++#endif
++		if (fb->fb_compat_ioctl)
+ 			ret = fb->fb_compat_ioctl(info, cmd, arg);
+ 		break;
+ 	}

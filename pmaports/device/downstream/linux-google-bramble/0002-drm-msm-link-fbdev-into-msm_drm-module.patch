@@ -1,0 +1,19 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] drm/msm: link msm_fbdev into the msm_drm module
+
+msm_drm is built as a module on redbull, but msm_fbdev.o was added as a
+separate obj-y target. Its symbols are not exported, so modpost fails
+with "msm_fbdev_init undefined" when CONFIG_DRM_FBDEV_EMULATION is set.
+Link the object into msm_drm.ko instead.
+
+--- a/techpack/display/msm/Makefile
++++ b/techpack/display/msm/Makefile
+@@ -128,6 +128,6 @@
+ 	msm_prop.o \
+ 	msm_notifier.o\
+ 
+-obj-$(CONFIG_DRM_MSM)	+= msm_drm.o
++msm_drm-$(CONFIG_DRM_FBDEV_EMULATION) += msm_fbdev.o
+ 
+-obj-$(CONFIG_DRM_FBDEV_EMULATION) += msm_fbdev.o
++obj-$(CONFIG_DRM_MSM)	+= msm_drm.o
