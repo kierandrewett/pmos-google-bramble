@@ -2,7 +2,7 @@
 maintainer="Yurii Bishchuk <astellias@gmail.com>"
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=9
+pkgrel=10
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -43,6 +43,8 @@ source="
 	bramble-modem.initd
 	bramble-wlfw-bdf.py
 	NetworkManager-conf.d-bramble-unmanaged.conf
+	ucm/sm7250-bolero-snd-card.conf
+	ucm/HiFi.conf
 	bramble-firmware.initd
 	phoc.ini
 	start_gui.sh
@@ -76,6 +78,16 @@ package() {
 	install -Dm644 "$srcdir"/NetworkManager-conf.d-bramble-unmanaged.conf \
 		"$pkgdir"/usr/lib/NetworkManager/conf.d/50-bramble-unmanaged.conf
 
+	# ALSA UCM for the sm7250-bolero-snd-card sound card. alsa-lib looks it
+	# up by driver name, which the kernel cuts to "sm7250-bolero-s".
+	install -Dm644 "$srcdir"/sm7250-bolero-snd-card.conf \
+		"$pkgdir"/usr/share/alsa/ucm2/Google/bramble/sm7250-bolero-snd-card.conf
+	install -Dm644 "$srcdir"/HiFi.conf \
+		"$pkgdir"/usr/share/alsa/ucm2/Google/bramble/HiFi.conf
+	mkdir -p "$pkgdir"/usr/share/alsa/ucm2/conf.d/sm7250-bolero-s
+	ln -s ../../Google/bramble/sm7250-bolero-snd-card.conf \
+		"$pkgdir"/usr/share/alsa/ucm2/conf.d/sm7250-bolero-s/sm7250-bolero-snd-card.conf
+
 	# Global environment profile
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/etc/profile.d/bramble-display.sh
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/usr/share/tinydm/env-wayland.d/20-bramble.sh
@@ -106,6 +118,8 @@ a5d44b215e552b22f2bb984b435c5aeb3dc03d83ad0a81e1d43783e68b234a82a04be8015490f2d2
 624f72146c7bad17201df6fc0392f9de0fa731bacef98fae34c8058668465229905c6f133b01d6905b0eed0273f2a8c38608546d58192123be55ef84ada9d2f9  bramble-modem.initd
 7c24879b48e57c4535dcf0624b1c903abfe57cf140d08212972e76a5b2774f86b9987c11fd3388e6a9d6c011554d1e87505fdf58c6929fdae2f6964c72900ffc  bramble-wlfw-bdf.py
 737e2fe5fcf3d274531a0b5f6f2da984d6136a34971e549cd9c609854bfbae918848cc387842620af40f89648bce36b648241bf1216cf149c2feb1ece13b3a04  NetworkManager-conf.d-bramble-unmanaged.conf
+cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a8634165a2233ac11d7f8978ef0ee83b094cbddc22e7f347592b  sm7250-bolero-snd-card.conf
+d46a8745f5b5fb6285bc49a8efcc864982128010402d1b761676168cfb26bdfae6764dc8f37d62bcf3571c27fcb493b866f83fbd736cbbacc295b8616b7efbeb  HiFi.conf
 1660ffd7be8917dea919b9d07aa0e5866ec2b004cfeaa11a44fc657eab77165656e67cbffce7baef083234c8e968de598397e38c6a0953b646831823921fef87  bramble-firmware.initd
 0cb295e52c929d8a498ad0d1d18ddffdbd6b5a29d15fca57c102fc055cdf908f36ee4fa538415b4679d4aa071da393a9cf44a6c61f749e09f05a3201139f079f  phoc.ini
 27f890feb672dc06c404415553bb289d0f576a3fafef368246a8a3364a47682a5a46e9b00fb7c76a67e179ed90d064c04f162401c5198d1183dc7764647e945d  start_gui.sh
