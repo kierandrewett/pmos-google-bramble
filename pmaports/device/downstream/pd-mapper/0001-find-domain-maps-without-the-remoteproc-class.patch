@@ -1,0 +1,129 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] Find domain maps without the remoteproc class
+
+Downstream Qualcomm kernels boot the DSPs with subsys-pil and have no
+/sys/class/remoteproc, so pd-mapper found no .jsn files and the kernel
+service locator could not resolve any protection domain (for example
+msm/modem/wlan_pd). Without remoteproc, scan the top of the firmware
+search path instead. The directory scan moves into a helper.
+
+diff --git a/pd-mapper.c b/pd-mapper.c
+index 1167e02..661a92a 100644
+--- a/pd-mapper.c
++++ b/pd-mapper.c
+@@ -272,27 +272,72 @@ static char *known_extensions[] = {
+   NULL,
+ };
+ 
++static void pd_add_jsons_from_dir(struct assoc *json_set, DIR *fw_dir, const char *path)
++{
++	char json_path[PATH_MAX];
++	struct dirent *fw_de;
++	size_t len;
++
++	while ((fw_de = readdir(fw_dir)) != NULL) {
++		int extens_index;
++		bool found = false;
++
++		if (!strcmp(fw_de->d_name, ".") || !strcmp(fw_de->d_name, ".."))
++			continue;
++
++		len = strlen(fw_de->d_name);
++
++		for (extens_index = 0; known_extensions[extens_index] != NULL; extens_index++) {
++			int extens_len = strlen(known_extensions[extens_index]);
++			if (len > extens_len &&
++			    !strcmp(&fw_de->d_name[len - extens_len], known_extensions[extens_index])) {
++				found = true;
++				break;
++			}
++		}
++
++		if (!found)
++			continue;
++
++		if (strlen(path) + 1 + strlen(fw_de->d_name) + 1 > sizeof(json_path))
++			continue;
++
++		strcpy(json_path, path);
++		strcat(json_path, "/");
++		strcat(json_path, fw_de->d_name);
++
++		assoc_set(json_set, json_path, NULL);
++	}
++}
++
+ static int pd_enumerate_jsons(struct assoc *json_set)
+ {
+ 	char firmware_value[PATH_MAX];
+ 	char *firmware_value_copy = NULL;
+ 	char *firmware_path = NULL;
+-	char json_path[PATH_MAX];
+ 	char firmware_attr[32];
+-	struct dirent *fw_de;
+ 	char path[PATH_MAX];
+ 	struct dirent *de;
+ 	int firmware_fd;
+ 	DIR *class_dir;
+ 	int class_fd;
+ 	DIR *fw_dir;
+-	size_t len;
+ 	size_t n;
+ 
+ 	class_fd = open("/sys/class/remoteproc", O_RDONLY | O_DIRECTORY);
+ 	if (class_fd < 0) {
+-		warn("failed to open remoteproc class");
+-		return -1;
++		/*
++		 * Downstream kernels boot the DSPs with subsys-pil and have no
++		 * remoteproc class. Scan the top of the firmware search path.
++		 */
++		fw_dir = opendir_firmware(".", path, sizeof(path));
++		if (!fw_dir) {
++			warn("no remoteproc class and no firmware directory");
++			return -1;
++		}
++		pd_add_jsons_from_dir(json_set, fw_dir, path);
++		closedir(fw_dir);
++		return 0;
+ 	}
+ 
+ 	class_dir = fdopendir(class_fd);
+@@ -330,36 +375,7 @@ static int pd_enumerate_jsons(struct assoc *json_set)
+ 		if (!fw_dir)
+ 			continue;
+ 
+-		while ((fw_de = readdir(fw_dir)) != NULL) {
+-			int extens_index;
+-			bool found = false;
+-
+-			if (!strcmp(fw_de->d_name, ".") || !strcmp(fw_de->d_name, ".."))
+-				continue;
+-
+-			len = strlen(fw_de->d_name);
+-
+-			for (extens_index = 0; known_extensions[extens_index] != NULL; extens_index++) {
+-				int extens_len = strlen(known_extensions[extens_index]);
+-				if (len > extens_len &&
+-				    !strcmp(&fw_de->d_name[len - extens_len], known_extensions[extens_index])) {
+-					found = true;
+-					break;
+-				}
+-			}
+-
+-			if (!found)
+-				continue;
+-
+-			if (strlen(path) + 1 + strlen(fw_de->d_name) + 1 > sizeof(json_path))
+-				continue;
+-
+-			strcpy(json_path, path);
+-			strcat(json_path, "/");
+-			strcat(json_path, fw_de->d_name);
+-
+-			assoc_set(json_set, json_path, NULL);
+-		}
++		pd_add_jsons_from_dir(json_set, fw_dir, path);
+ 
+ 		closedir(fw_dir);
+ 		free(firmware_value_copy);

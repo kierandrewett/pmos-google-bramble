@@ -1,0 +1,38 @@
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+pkgname=qrtr-ns
+pkgver=1.2
+pkgrel=0
+pkgdesc="QRTR name service for downstream Qualcomm kernels without the in-kernel name service"
+url="https://github.com/linux-msm/qrtr"
+arch="aarch64 armv7"
+license="BSD-3-Clause"
+depends="qrtr-libs~$pkgver"
+makedepends="linux-headers meson qrtr-dev"
+subpackages="$pkgname-openrc"
+source="
+	qrtr-$pkgver.tar.gz::https://github.com/linux-msm/qrtr/archive/refs/tags/v$pkgver.tar.gz
+	qrtr-ns.initd
+	"
+builddir="$srcdir/qrtr-$pkgver"
+options="!check"
+
+# Alpine's qrtr builds without qrtr-ns, because kernels since 5.7 run the
+# name service in the kernel. Downstream 4.x kernels still need it in
+# userspace (Android starts /vendor/bin/qrtr-ns). Only qrtr-ns is installed;
+# it uses libqrtr from Alpine's qrtr-libs of the same version.
+build() {
+	abuild-meson \
+		-Dqrtr-ns=enabled \
+		-Dsystemd-service=disabled \
+		. output
+	meson compile -C output
+}
+
+package() {
+	install -Dm755 output/src/qrtr-ns "$pkgdir"/usr/bin/qrtr-ns
+	install -Dm755 "$srcdir"/qrtr-ns.initd "$pkgdir"/etc/init.d/qrtr-ns
+}
+sha512sums="
+aec1dfc598a70f0128d81a56faab74a2a7676dc0c4ff2e858f76aaf815afb5b785af0cf18427212f92aec3c61297af3f94a64671ec5e161c4a340d2edcfaabdd  qrtr-1.2.tar.gz
+0f41a94e6f7c0a67889f230f0519fd97a8097eee762ac09d82ebe4b1893ce97474d885350856ffae7fd09452c17b3cba323b5cc92cb2ebee52c6fd26aa0140cc  qrtr-ns.initd
+"

@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+
+name="QRTR name service"
+description="QRTR name service for downstream Qualcomm kernels"
+
+command=/usr/bin/qrtr-ns
+command_args="-f"
+command_background="yes"
+pidfile="/run/$RC_SVCNAME.pid"
+
+depend() {
+	before rmtfs tqftpserv
+}
+
+start_pre() {
+	modprobe -q qrtr || true
+}

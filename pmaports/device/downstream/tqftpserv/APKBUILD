@@ -1,0 +1,34 @@
+# Forked from Alpine aports (community/tqftpserv) for downstream Qualcomm
+# kernels without the remoteproc class (see the patch).
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+pkgname=tqftpserv
+pkgver=1.3
+pkgrel=1
+pkgdesc="Trivial File Transfer Protocol server over AF_QIPCRTR"
+url="https://github.com/linux-msm/tqftpserv"
+arch="all"
+license="BSD-3-Clause"
+makedepends="meson qrtr-dev zstd-dev"
+source="https://github.com/linux-msm/tqftpserv/archive/v$pkgver/tqftpserv-v$pkgver.tar.gz
+	0001-translate-fall-back-to-the-firmware-path-without-remoteproc.patch
+	tqftpserv.initd
+	"
+subpackages="$pkgname-doc $pkgname-openrc"
+options="!check" # No test suite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+	install -Dm755 "$srcdir"/tqftpserv.initd "$pkgdir"/etc/init.d/tqftpserv
+}
+sha512sums="
+1e43ef53633baf8b06132dc84bf8274ab9cf96c7d5c4c99b31d908f03ed6e90fc1a67ade76220ef2ed87eac8be50f5ac2de554ec3a604f026054ba6609364a74  tqftpserv-v1.3.tar.gz
+c8626e55d52c6a8de179df7276202fb62c6a82e1f78a585635dc82fa962c977f1b90bbdbcad156e9e70efcf93ba7f3d77ba58593d5ce2bf7c22dc3f2e71bf7c8  0001-translate-fall-back-to-the-firmware-path-without-remoteproc.patch
+9fde613a1ed53e633ab676e37245d40598deb4b6896c379054389adad5af9f110fcf95871fe31bad3f0ed9321ba3cee8a2160b95e56873719382f81063a85721  tqftpserv.initd
+"

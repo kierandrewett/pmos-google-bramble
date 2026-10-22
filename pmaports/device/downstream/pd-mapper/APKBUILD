@@ -1,0 +1,30 @@
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+pkgname=pd-mapper
+pkgver=1.1
+pkgrel=0
+pkgdesc="Qualcomm protection domain mapper (service locator server)"
+url="https://github.com/linux-msm/pd-mapper"
+arch="aarch64 armv7"
+license="BSD-3-Clause"
+makedepends="qrtr-dev xz-dev"
+subpackages="$pkgname-openrc"
+source="
+	pd-mapper-$pkgver.tar.gz::https://github.com/linux-msm/pd-mapper/archive/refs/tags/v$pkgver.tar.gz
+	0001-find-domain-maps-without-the-remoteproc-class.patch
+	pd-mapper.initd
+	"
+options="!check"
+
+build() {
+	make prefix=/usr
+}
+
+package() {
+	install -Dm755 pd-mapper "$pkgdir"/usr/bin/pd-mapper
+	install -Dm755 "$srcdir"/pd-mapper.initd "$pkgdir"/etc/init.d/pd-mapper
+}
+sha512sums="
+d870933f1000adf6701d5dde29bc528aa9a60686179cf696322bf0663833c5ed7a085882c79aa8cd4231baba3906299da1c0160c118c163ea4b2954a0e19e9cc  pd-mapper-1.1.tar.gz
+0b4988062a96bea920a0f1a6d3fef1f10d5428b8ee99e6f8c3aa245388cae6cb9031e1fbb8c2d570251320368bc7bdd6f4e72e617db0db295a6cfa3a3e445a67  0001-find-domain-maps-without-the-remoteproc-class.patch
+971f7b9db2ee51e87a67bc24980ce3a94a26ec205f6dca099a5332046be4c898fcc4e9cc6208e39843ad660b252ae7d9894f538696aafadb0256166b360a4ec9  pd-mapper.initd
+"

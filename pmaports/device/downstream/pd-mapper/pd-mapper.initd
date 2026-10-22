@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+
+name="pd-mapper"
+description="Qualcomm protection domain mapper (service locator)"
+
+command=/usr/bin/pd-mapper
+command_background="yes"
+pidfile="/run/$RC_SVCNAME.pid"
+
+depend() {
+	need qrtr-ns
+	after msm-firmware-loader bramble-firmware
+}
