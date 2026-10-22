@@ -2,7 +2,7 @@
 maintainer="Yurii Bishchuk <astellias@gmail.com>"
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=1
+pkgrel=6
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -28,6 +28,8 @@ source="
 	modules-initfs
 	modules-load.conf
 	initfs-hook.sh
+	modprobe.conf
+	initfs.files
 	fix_drm_formats.c
 	90-google-bramble.rules
 	bramble-display.sh
@@ -52,6 +54,11 @@ package() {
 	# Qualcomm MSM DRM fix (FourCC duplicate assert, monotonic clock, udev touch, faccessat)
 	install -Dm755 libfix_drm_formats.so "$pkgdir"/usr/lib/libfix_drm_formats.so
 
+	# Ship the alias blacklist in the initramfs too, in /etc/modprobe.d
+	# because busybox modprobe (used by mdev there) only reads that path
+	install -Dm644 "$srcdir"/initfs.files \
+		"$pkgdir"/usr/share/mkinitfs/files/10-$pkgname.files
+
 	# Firmware links and DSP boot
 	install -Dm755 "$srcdir"/bramble-firmware.initd "$pkgdir"/etc/init.d/bramble-firmware
 	install -Dm755 "$srcdir"/bramble-dsp.initd "$pkgdir"/etc/init.d/bramble-dsp
@@ -73,10 +80,12 @@ package() {
 	install -Dm755 "$srcdir"/start_gui.sh "$pkgdir"/usr/bin/start_gui.sh
 }
 sha512sums="
-dd58bc75dcaa1c380f23cfffdc9af0c8ee1e303bc6b7d12c437ea2bcaf4264c8a10a7a3788b01c781a7ec8db89471b6284d214dd23b86eb3cb3a5d4dd3546b87  deviceinfo
-816b8c5caa8e6dc245ee290b9ae8c9d6b16bd739f372807e454a516dc3c841d439deb1f4d00eaac0f6e3c4b3b77bbe1e5c6673c75f707928f637978f8548bdcc  modules-initfs
-2de27f96b78342d029ae307af3b86cfa59986da21f2236025213764e9d5b57be9dd875eb05d4d66e9f4646be21e0583caf8bf0119a1601643f8c8f9625592938  modules-load.conf
-16d2f1c23b7d495dc99c7c7c539caadf6a032a2c589d8739916b96e4760b2491eaeb47aacf454c86a2fdefff2033d4d5475abb5963ed41d725d4d786c751906b  initfs-hook.sh
+b9499a760967415d6066b782b1024c2099a4364e8caf98997050e0db70e2c40d75cd7f17becde6f8c005283f787398c789bfa279e95a33f8e689152211d809a1  deviceinfo
+c6eb0680275078e64efcf3af9fc69baaf44b5b8324a85654b412b2de178a5eb9df0161af4dbe89127e170b8470923fd206cbf12615818b001048f076dc3b2ef5  modules-initfs
+e15aab0f2637fe56a51ecfc1ef7a4293a599df9a80478a6f79d886966d16f2aff81c22d44aef9de88e4b20a64b4bcefe90f99a37f2dbc06c41595de015eaa63c  modules-load.conf
+facf800a0d16fef7f90d3ba536bfa4f1ded537b5a3a0a572f133ea45482d287a2a89837dbbfc9fefe590e065c8efacdec499897f47bf1c021f3cbb8c7a18d207  initfs-hook.sh
+23c5e2ce31a948b3b4e8b534759e46846c9e46176ac10400e33e5eb81241cf8f8ecb6f4831d6defce507d02cd5dfa4bb2da5ea0a57df7c66dd97594ec46115a0  modprobe.conf
+5be5301ed536b0caa104cb096dd0cdb4596af8abb39d0edcd635bcc99e0442f3522f6f9621ce15ecf3c772e1ad1139ce682a5f1aa21b2eb3225367116a2424c3  initfs.files
 156a5472e81f1251559a18772ac95d412a577ade64d732c8395213380c4187fcbacb8af8e0455f73209292d8c5c7fa923fff20b2445eda8915bb9960f216463a  fix_drm_formats.c
 47522581a8228c1cd2da1a0920b847c7c483638a1ac02cb304478dbfd3eff24538d2f3ba9c927131aee7540f0e02de04ea8cf46f554c0ee8f512b2cd6107c35c  90-google-bramble.rules
 a5d44b215e552b22f2bb984b435c5aeb3dc03d83ad0a81e1d43783e68b234a82a04be8015490f2d200e1f20b08524c03bb9cdacb21520f257f5d581ebc6845bd  bramble-display.sh

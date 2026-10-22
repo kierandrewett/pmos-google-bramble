@@ -29,6 +29,12 @@ deviceinfo_flash_fastboot_partition_dtbo="dtbo"
 deviceinfo_rootfs_image_sector_size="4096"
 # The 4.19 kernel cannot unpack zstd; it has RD_GZIP and RD_LZ4.
 deviceinfo_initfs_compression="gzip"
+# Stage 1 must load modules-initfs in stock order before udev starts (udev
+# would otherwise load them in parallel by alias, which freezes the phone).
+# pmOS stage 1 only does that when stage 2 lives in initramfs-extra.
+deviceinfo_create_initfs_extra="true"
+# The stage 1 script unpacks initramfs-extra with "gzip -d" only.
+deviceinfo_initfs_extra_compression="gzip"
 deviceinfo_kernel_cmdline="console=tty0 printk.devkmsg=on msm_rtb.filter=0x237 service_locator.enable=1 cgroup.memory=nokmem lpm_levels.sleep_disabled=1 usbcore.autosuspend=7 androidboot.usbcontroller=a600000.dwc3 swiotlb=2048 androidboot.boot_devices=soc/1d84000.ufshc"
 
 # USB networking
