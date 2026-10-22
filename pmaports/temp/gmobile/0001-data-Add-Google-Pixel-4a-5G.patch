@@ -1,0 +1,40 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] data: Add Google Pixel 4a (5G)
+
+Cutout and corner radius come from the Android overlay for bramble
+(config_mainBuiltInDisplayCutout: radius 40 circle at 77,77;
+rounded_corner_radius: 108px). 1080x2340 at 413 ppi is about 66x144 mm.
+
+---
+diff --git a/data/devices/display-panels/google,bramble-sm7250.json b/data/devices/display-panels/google,bramble-sm7250.json
+new file mode 100644
+index 0000000..cd4097f
+--- /dev/null
++++ b/data/devices/display-panels/google,bramble-sm7250.json
+@@ -0,0 +1,14 @@
++{
++  "name": "Google Pixel 4a (5G)",
++  "x-res": 1080,
++  "y-res": 2340,
++  "border-radius": 108,
++  "width": 66,
++  "height": 144,
++  "cutouts" : [
++    {
++      "name": "punch-hole",
++      "path": "M 37,77 a 40,40 0 1 0 80,0 a 40,40 0 1 0 -80,0 Z"
++    }
++  ]
++}
+diff --git a/data/gmobile.gresources.xml b/data/gmobile.gresources.xml
+index 8ff7b93..1414198 100644
+--- a/data/gmobile.gresources.xml
++++ b/data/gmobile.gresources.xml
+@@ -11,6 +11,7 @@
+     <file preprocess="json-stripblanks">devices/display-panels/furilabs,flx1.json</file>
+     <file preprocess="json-stripblanks">devices/display-panels/gigaset,gs5.json</file>
+     <file preprocess="json-stripblanks">devices/display-panels/gigaset,gx4.json</file>
++    <file preprocess="json-stripblanks">devices/display-panels/google,bramble-sm7250.json</file>
+     <file preprocess="json-stripblanks">devices/display-panels/moto,bronco.json</file>
+     <file preprocess="json-stripblanks">devices/display-panels/motorola,dubai.json</file>
+     <file preprocess="json-stripblanks">devices/display-panels/motorola,river.json</file>
