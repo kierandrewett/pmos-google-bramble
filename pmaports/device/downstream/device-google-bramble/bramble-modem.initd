@@ -1,0 +1,48 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): boot the modem DSP. The WLAN firmware runs on the modem
+# (msm/modem/wlan_pd), so Wi-Fi needs this even without mobile data.
+#
+# Same steps as stock Android:
+# - subsystem restart level RELATED (ssr_setup), so a DSP crash restarts
+#   only that DSP instead of the whole phone
+# - rmtfs serves the modem EFS partitions (vendor rmt_storage). No -s: that
+#   option needs the upstream remoteproc class, which this kernel lacks.
+# - load the IPA firmware ("write /dev/ipa 1" in init.sm7250.rc); the
+#   qcacld WLAN driver fails to probe (-EFAULT) without IPA
+# - keep /dev/subsys_modem open, which powers the modem up (vendor per_mgr)
+# - send the WLAN board data file to the firmware (vendor cnss-daemon); only
+#   then does the firmware report FW_READY and qcacld creates wlan0
+# qrtr-ns, pd-mapper and tqftpserv must already run (see depend).
+
+name="bramble-modem"
+description="Boot the Pixel 4a (5G) modem DSP"
+
+rmtfs_pidfile="/run/bramble-modem-rmtfs.pid"
+hold_pidfile="/run/bramble-modem-hold.pid"
+
+depend() {
+	need qrtr-ns pd-mapper tqftpserv
+	after bramble-firmware
+}
+
+start() {
+	ebegin "Booting modem DSP"
+	for _d in /sys/bus/msm_subsys/devices/*; do
+		echo related > "$_d/restart_level" 2>/dev/null
+	done
+	[ -c /dev/ipa ] && printf 1 > /dev/ipa
+	start-stop-daemon -S -b -m -p "$rmtfs_pidfile" -x /usr/bin/rmtfs -- -P
+	start-stop-daemon -S -b -m -p "$hold_pidfile" -x /bin/sh -- \
+		-c 'exec sleep 2147483647 < /dev/subsys_modem'
+	# Waits up to 60 s for the WLAN firmware service, so run it detached.
+	start-stop-daemon -S -b -x /usr/libexec/bramble-wlfw-bdf
+	eend $?
+}
+
+stop() {
+	ebegin "Shutting down modem DSP"
+	start-stop-daemon -K -p "$hold_pidfile"
+	sleep 2
+	start-stop-daemon -K -p "$rmtfs_pidfile"
+	eend 0
+}

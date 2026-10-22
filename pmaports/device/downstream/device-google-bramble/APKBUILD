@@ -2,7 +2,7 @@
 maintainer="Yurii Bishchuk <astellias@gmail.com>"
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=6
+pkgrel=8
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -13,6 +13,12 @@ depends="
 	linux-google-bramble
 	make-dynpart-mappings
 	msm-firmware-loader
+	pd-mapper-openrc
+	python3
+	qrtr
+	qrtr-ns-openrc
+	rmtfs
+	tqftpserv-openrc
 	postmarketos-base
 	postmarketos-base-downstream
 	seatd
@@ -22,7 +28,7 @@ makedepends="
 	libdrm-dev
 	gcc
 	"
-install="$pkgname.post-install"
+install="$pkgname.post-install $pkgname.post-upgrade"
 source="
 	deviceinfo
 	modules-initfs
@@ -34,6 +40,8 @@ source="
 	90-google-bramble.rules
 	bramble-display.sh
 	bramble-dsp.initd
+	bramble-modem.initd
+	bramble-wlfw-bdf.py
 	bramble-firmware.initd
 	phoc.ini
 	start_gui.sh
@@ -62,6 +70,8 @@ package() {
 	# Firmware links and DSP boot
 	install -Dm755 "$srcdir"/bramble-firmware.initd "$pkgdir"/etc/init.d/bramble-firmware
 	install -Dm755 "$srcdir"/bramble-dsp.initd "$pkgdir"/etc/init.d/bramble-dsp
+	install -Dm755 "$srcdir"/bramble-modem.initd "$pkgdir"/etc/init.d/bramble-modem
+	install -Dm755 "$srcdir"/bramble-wlfw-bdf.py "$pkgdir"/usr/libexec/bramble-wlfw-bdf
 
 	# Global environment profile
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/etc/profile.d/bramble-display.sh
@@ -90,7 +100,9 @@ facf800a0d16fef7f90d3ba536bfa4f1ded537b5a3a0a572f133ea45482d287a2a89837dbbfc9fef
 47522581a8228c1cd2da1a0920b847c7c483638a1ac02cb304478dbfd3eff24538d2f3ba9c927131aee7540f0e02de04ea8cf46f554c0ee8f512b2cd6107c35c  90-google-bramble.rules
 a5d44b215e552b22f2bb984b435c5aeb3dc03d83ad0a81e1d43783e68b234a82a04be8015490f2d200e1f20b08524c03bb9cdacb21520f257f5d581ebc6845bd  bramble-display.sh
 2109872d10ec06f4803b5a95eeea57755643d81a48a81f8720cf5178c07b78cd8208294ce4878db1a6a266acf6f01b503bb7fa31fc50246c17e7ab6c8e15867d  bramble-dsp.initd
-d3ad9e4818fdf86b03cdc3d2b496fef571e268b83c59d2aa37f93beefdcb943276f3a0a01fad0ada158b22b12efba856fec7792cb75928ff07e14978f8e4d99b  bramble-firmware.initd
+def42e96ae6606bf858ce55d16a8d832fa4e1823d65965ebd30ec54de9abaeba1243ab8773f47b8c0eb8fcd389c478bbf50c732f72aaf3f93c8c15754e10bf68  bramble-modem.initd
+7c24879b48e57c4535dcf0624b1c903abfe57cf140d08212972e76a5b2774f86b9987c11fd3388e6a9d6c011554d1e87505fdf58c6929fdae2f6964c72900ffc  bramble-wlfw-bdf.py
+1660ffd7be8917dea919b9d07aa0e5866ec2b004cfeaa11a44fc657eab77165656e67cbffce7baef083234c8e968de598397e38c6a0953b646831823921fef87  bramble-firmware.initd
 0cb295e52c929d8a498ad0d1d18ddffdbd6b5a29d15fca57c102fc055cdf908f36ee4fa538415b4679d4aa071da393a9cf44a6c61f749e09f05a3201139f079f  phoc.ini
 27f890feb672dc06c404415553bb289d0f576a3fafef368246a8a3364a47682a5a46e9b00fb7c76a67e179ed90d064c04f162401c5198d1183dc7764647e945d  start_gui.sh
 01e3fe0f7c20f42e0f2e6f1e873942dc8e533b3ae2a382152acd9be28f6fb580649a38ead9363b65dbc3d88163a7c733d41d41bc7a648cf0feef3c5196720cec  10-bramble-env.conf

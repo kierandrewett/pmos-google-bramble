@@ -1,7 +1,9 @@
 #!/sbin/openrc-run
 # Pixel 4a (5G): add firmware sub-directories that msm-firmware-loader does
-# not link. The qcacld-3.0 WLAN driver asks for wlan/qca_cld/*, which lives
-# in a sub-directory of /vendor/firmware on the stock vendor partition.
+# not link (it only links plain files):
+# - wlan/qca_cld/* from /vendor/firmware, asked for by the qcacld-3.0 driver
+# - the sub-directories of the modem image (modem_pr, saipan), which the
+#   modem asks tqftpserv for as /readonly/firmware/image/<dir>/...
 
 name="bramble-firmware"
 description="Link extra Pixel 4a (5G) firmware directories"
@@ -19,5 +21,10 @@ start() {
 	if [ -d "$_vendor/wlan" ] && [ ! -e "$_base/target/wlan" ]; then
 		ln -s "$_vendor/wlan" "$_base/target/wlan"
 	fi
+	for _dir in "$_base/mnt/modem$_slot"/image/*/; do
+		[ -d "$_dir" ] || continue
+		_name=$(basename "$_dir")
+		[ -e "$_base/target/$_name" ] || ln -s "$_dir" "$_base/target/$_name"
+	done
 	eend 0
 }
