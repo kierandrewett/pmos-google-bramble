@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): boot the audio DSP (ADSP) and compute DSP (CDSP).
+# Stock Android does the same in /vendor/etc/init.insmod.bramble.cfg after
+# it has loaded all vendor modules.
+
+name="bramble-dsp"
+description="Boot the Pixel 4a (5G) ADSP and CDSP"
+
+depend() {
+	need msm-firmware-loader modules
+	after bramble-firmware
+}
+
+start() {
+	ebegin "Booting ADSP and CDSP"
+	_ret=0
+	for _dsp in adsp cdsp; do
+		_node="/sys/kernel/boot_$_dsp/boot"
+		if [ -w "$_node" ]; then
+			echo 1 > "$_node" || _ret=1
+		else
+			ewarn "$_node not found"
+			_ret=1
+		fi
+	done
+	eend $_ret
+}

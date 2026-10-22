@@ -1,0 +1,7 @@
+#!/bin/sh
+
+rc-update -q add msm-firmware-loader sysinit
+rc-update -q add bramble-firmware sysinit
+rc-update -q add bramble-dsp default
+
+exit 0

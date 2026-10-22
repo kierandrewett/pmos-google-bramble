@@ -8,26 +8,31 @@ deviceinfo_manufacturer="Google"
 deviceinfo_codename="google-bramble"
 deviceinfo_year="2020"
 deviceinfo_arch="aarch64"
+deviceinfo_chassis="handset"
+deviceinfo_drm="true"
+deviceinfo_screen_width="1080"
+deviceinfo_screen_height="2340"
 
 # Downstream kernel
 deviceinfo_kernel_source="downstream"
 
-# Bootloader Header v3 (Pixel 4a 5G / SM7250)
+# Bootloader: boot image header v3, so the DTB, initramfs and cmdline go
+# into vendor_boot. Addresses match the stock UP1A.231105.001.B2 images.
+deviceinfo_flash_method="fastboot"
 deviceinfo_generate_bootimg="true"
 deviceinfo_header_version="3"
-deviceinfo_boot_img_header_version="3"
 deviceinfo_flash_pagesize="4096"
-deviceinfo_flash_method="fastboot"
-deviceinfo_dtb="lito-v2"
+deviceinfo_dtb="google/lito-redbull"
+deviceinfo_bootimg_custom_args="--base 0x00000000 --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 --dtb_offset 0x01f00000 --os_version 14.0.0 --os_patch_level 2023-11"
+deviceinfo_flash_fastboot_partition_vbmeta="vbmeta"
+deviceinfo_flash_fastboot_partition_dtbo="dtbo"
+deviceinfo_rootfs_image_sector_size="4096"
+# The 4.19 kernel cannot unpack zstd; it has RD_GZIP and RD_LZ4.
+deviceinfo_initfs_compression="gzip"
+deviceinfo_kernel_cmdline="console=tty0 printk.devkmsg=on msm_rtb.filter=0x237 service_locator.enable=1 cgroup.memory=nokmem lpm_levels.sleep_disabled=1 usbcore.autosuspend=7 androidboot.usbcontroller=a600000.dwc3 swiotlb=2048 androidboot.boot_devices=soc/1d84000.ufshc"
 
-# USB Networking
+# USB networking
 deviceinfo_usb_network_udc="a600000.dwc3"
 deviceinfo_usb_network_function="ncm.usb0"
 deviceinfo_usb_idVendor="0x18d1"
 deviceinfo_usb_idProduct="0x4eea"
-
-deviceinfo_bootimg_custom_args="--os_version 16.0.0 --os_patch_level 2026-10"
-deviceinfo_kernel_cmdline="console=tty0 printk.devkmsg=on androidboot.selinux=permissive androidboot.usbcontroller=a600000.dwc3 lpm_levels.sleep_disabled=1 swiotlb=2048"
-deviceinfo_screen_width="1080"
-deviceinfo_screen_height="2340"
-deviceinfo_chassis="handset"
