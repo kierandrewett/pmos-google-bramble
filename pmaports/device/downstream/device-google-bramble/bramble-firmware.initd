@@ -1,7 +1,8 @@
 #!/sbin/openrc-run
 # Pixel 4a (5G): add firmware sub-directories that msm-firmware-loader does
 # not link (it only links plain files):
-# - wlan/qca_cld/* from /vendor/firmware, asked for by the qcacld-3.0 driver
+# - wlan/qca_cld/WCNSS_qcom_cfg.ini from /vendor/firmware, read by the
+#   qcacld-3.0 driver; a copy with WLAN IPA offload off, see below
 # - the sub-directories of the modem image (modem_pr, saipan), which the
 #   modem asks tqftpserv for as /readonly/firmware/image/<dir>/...
 
@@ -18,8 +19,15 @@ start() {
 	_base=/run/msm-firmware-loader
 	_slot=$(grep -o 'androidboot\.slot_suffix=_[ab]' /proc/cmdline | cut -d= -f2)
 	_vendor="$_base/mnt/vendor$_slot/firmware"
-	if [ -d "$_vendor/wlan" ] && [ ! -e "$_base/target/wlan" ]; then
-		ln -s "$_vendor/wlan" "$_base/target/wlan"
+	# Without Android's IPACM, the WLAN IPA offload setup on each WLAN
+	# connect or disconnect stops mobile data uplink until the next data
+	# connection. Turn the offload off (gIPAConfig=0); WLAN data then goes
+	# through the host as on other pmOS devices.
+	_ini="$_vendor/wlan/qca_cld/WCNSS_qcom_cfg.ini"
+	if [ -f "$_ini" ] && [ ! -e "$_base/target/wlan" ]; then
+		mkdir -p "$_base/target/wlan/qca_cld"
+		sed 's/^gIPAConfig=.*/gIPAConfig=0/' "$_ini" \
+			> "$_base/target/wlan/qca_cld/WCNSS_qcom_cfg.ini"
 	fi
 	for _dir in "$_base/mnt/modem$_slot"/image/*/; do
 		[ -d "$_dir" ] || continue
