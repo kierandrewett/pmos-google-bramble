@@ -26,5 +26,14 @@ start() {
 		_name=$(basename "$_dir")
 		[ -e "$_base/target/$_name" ] || ln -s "$_dir" "$_base/target/$_name"
 	done
+	# btqca (hci_qca, WCN3990) asks for qca/crbtfw<rom>.tlv and
+	# qca/crnv<rom>.bin, but the vendor BT images are flat in $_vendor.
+	if [ ! -e "$_base/target/qca" ]; then
+		mkdir -p "$_base/target/qca"
+		for _f in "$_vendor"/crbtfw*.tlv "$_vendor"/crnv*.bin; do
+			[ -f "$_f" ] || continue
+			ln -s "$_f" "$_base/target/qca/${_f##*/}"
+		done
+	fi
 	eend 0
 }
