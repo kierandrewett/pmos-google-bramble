@@ -1,0 +1,316 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] input: fts_touch: wake on a double tap while the screen is off
+
+On Android the touch bus goes to the ADSP while the screen is off, and the
+ADSP detects taps. Linux has no ADSP touch support, and the controller's
+own gesture mode does not report a double tap with this firmware (tested:
+no interrupt with the panel on or off). Normal touch reporting does keep
+working with the panel powered off.
+
+Add a double_tap_wake sysfs switch. When it is set, screen off keeps the
+controller scanning (mutual sense only) with the bus and the interrupt on
+the AP, and the interrupt armed as a wakeup source (GPIO 9 has a PDC
+wake line). The interrupt handler reads the FIFO without a bus reference
+and feeds the touch events to a small double tap detector, which reports
+KEY_POWER; Phosh turns the screen on for the power key. Touches are not
+reported while the screen is off. System suspend defers the interrupt
+until the SPI bus has resumed, like the phone call mode does. Screen on
+disarms the detector and resumes as before, without the ADSP bus request.
+
+---
+--- a/drivers/input/touchscreen/fts_touch/fts.h	2026-10-23 17:06:01.941784138 +0100
++++ b/drivers/input/touchscreen/fts_touch/fts.h	2026-10-23 17:07:08.484779845 +0100
+@@ -397,6 +397,17 @@
+   *                       from the host \n
+   * - tbn             Touch Bus Negotiator context
+   */
++/* Double tap detector state, used while the screen is off (tap to wake) */
++struct fts_tap_wake {
++	unsigned long fingers;	/* touch IDs currently down */
++	bool valid;		/* the current touch can still be a tap */
++	int taps;		/* taps completed in the current sequence */
++	ktime_t down_time;	/* when the current touch started */
++	ktime_t up_time;	/* when the first tap ended */
++	int x, y;		/* where the current touch started */
++	int first_x, first_y;	/* where the first tap started */
++};
++
+ struct fts_ts_info {
+ 	struct device           *dev;	/* Pointer to the device */
+ #ifdef I2C_INTERFACE
+@@ -477,6 +488,10 @@
+ 
+ 	/* switches for features */
+ 	int gesture_enabled;	/* Gesture during suspend */
++	bool tap_wake_enabled;	/* double_tap_wake: wake on a double tap */
++	bool tap_wake_armed;	/* screen off, still sensing for a double tap */
++	bool tap_wake_suspended; /* system suspend disabled the armed irq */
++	struct fts_tap_wake tap; /* double tap detector */
+ 	int glove_enabled;	/* Glove mode */
+ 	int charger_enabled;	/* Charger mode */
+ 	int stylus_enabled;	/* Stylus mode */
+--- a/drivers/input/touchscreen/fts_touch/fts.c	2026-10-23 17:06:01.941835919 +0100
++++ b/drivers/input/touchscreen/fts_touch/fts.c	2026-10-23 17:07:08.490244748 +0100
+@@ -2754,6 +2754,30 @@
+ }
+ #endif
+ 
++/* Tap to wake: "echo 1 > double_tap_wake" (applies at the next screen off) */
++static ssize_t double_tap_wake_show(struct device *dev,
++				    struct device_attribute *attr, char *buf)
++{
++	struct fts_ts_info *info = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", info->tap_wake_enabled);
++}
++
++static ssize_t double_tap_wake_store(struct device *dev,
++				     struct device_attribute *attr,
++				     const char *buf, size_t count)
++{
++	struct fts_ts_info *info = dev_get_drvdata(dev);
++	bool enable;
++
++	if (kstrtobool(buf, &enable) < 0)
++		return -EINVAL;
++
++	WRITE_ONCE(info->tap_wake_enabled, enable);
++	return count;
++}
++
++static DEVICE_ATTR_RW(double_tap_wake);
+ static DEVICE_ATTR_RO(infoblock_getdata);
+ static DEVICE_ATTR_RW(fwupdate);
+ static DEVICE_ATTR_RO(appid);
+@@ -2852,6 +2876,7 @@
+ 	&dev_attr_prox_palm_status.attr,
+ 	&dev_attr_audio_status.attr,
+ #endif
++	&dev_attr_double_tap_wake.attr,
+ 	NULL,
+ };
+ 
+@@ -4363,6 +4388,94 @@
+   * the FIFO and dispatch them to the proper event handler according the event
+   * ID
+   */
++/*
++ * Tap to wake.
++ *
++ * The controller's own gesture mode does not report a double tap with this
++ * firmware (Android detects taps on the ADSP instead), but normal touch
++ * reporting keeps working with the panel powered off. So while the screen is
++ * off and double_tap_wake is set, the controller keeps scanning (mutual sense
++ * only), its interrupt stays armed as a wakeup source, and the driver finds a
++ * double tap in the touch events and reports KEY_POWER, which Phosh uses to
++ * turn the screen on. No touches are reported while the screen is off.
++ */
++#define FTS_TAP_MAX_MS		400	/* longest contact that counts as a tap */
++#define FTS_TAP_GAP_MS		500	/* longest pause between the two taps */
++#define FTS_TAP_SLOP		60	/* most a tap may move, in pixels */
++#define FTS_DOUBLE_TAP_SLOP	200	/* most the 2nd tap may be from the 1st */
++
++static bool fts_tap_wake_far(int x0, int y0, int x1, int y1, int slop)
++{
++	int dx = x1 - x0, dy = y1 - y0;
++
++	return dx * dx + dy * dy > slop * slop;
++}
++
++/* Feed one FIFO event to the double tap detector */
++static void fts_tap_wake_event(struct fts_ts_info *info, const u8 *event)
++{
++	struct fts_tap_wake *tap = &info->tap;
++	u8 type = event[1] & 0x0F;
++	u8 id = (event[1] & 0xF0) >> 4;
++	int x = ((event[3] & 0x0F) << 8) | event[2];
++	int y = (event[4] << 4) | ((event[3] & 0xF0) >> 4);
++	ktime_t now = ktime_get();
++
++	switch (event[0] >> 4) {
++	case EVT_ID_ENTER_POINT >> 4:
++		if (tap->fingers) {
++			/* more than one finger is not a tap */
++			tap->valid = false;
++		} else {
++			tap->valid = type == TOUCH_TYPE_FINGER ||
++				     type == TOUCH_TYPE_GLOVE;
++			tap->down_time = now;
++			tap->x = x;
++			tap->y = y;
++			if (tap->taps &&
++			    (ktime_ms_delta(now, tap->up_time) > FTS_TAP_GAP_MS ||
++			     fts_tap_wake_far(tap->first_x, tap->first_y, x, y,
++					      FTS_DOUBLE_TAP_SLOP)))
++				tap->taps = 0;
++		}
++		__set_bit(id, &tap->fingers);
++		break;
++
++	case EVT_ID_MOTION_POINT >> 4:
++		if (fts_tap_wake_far(tap->x, tap->y, x, y, FTS_TAP_SLOP))
++			tap->valid = false;
++		break;
++
++	case EVT_ID_LEAVE_POINT >> 4:
++		/* ignore touches that started before the screen went off */
++		if (!__test_and_clear_bit(id, &tap->fingers) || tap->fingers)
++			break;
++
++		if (!tap->valid ||
++		    ktime_ms_delta(now, tap->down_time) > FTS_TAP_MAX_MS) {
++			tap->taps = 0;
++			break;
++		}
++
++		if (++tap->taps == 1) {
++			tap->first_x = tap->x;
++			tap->first_y = tap->y;
++			tap->up_time = now;
++			break;
++		}
++
++		tap->taps = 0;
++		pr_info("%s: double tap, waking the screen\n", __func__);
++		mutex_lock(&info->input_report_mutex);
++		input_report_key(info->input_dev, KEY_POWER, 1);
++		input_sync(info->input_dev);
++		input_report_key(info->input_dev, KEY_POWER, 0);
++		input_sync(info->input_dev);
++		mutex_unlock(&info->input_report_mutex);
++		break;
++	}
++}
++
+ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
+ {
+ 	struct fts_ts_info *info = handle;
+@@ -4375,6 +4488,7 @@
+ 	unsigned char events_remaining = 0;
+ 	unsigned char *evt_data;
+ 	bool processed_pointer_event = false;
++	bool tap_wake = READ_ONCE(info->tap_wake_armed);
+ 
+ #if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+ 	struct touch_offload_frame *frame = NULL;
+@@ -4382,8 +4496,10 @@
+ 
+ 	/* It is possible that interrupts were disabled while the handler is
+ 	 * executing, before acquiring the mutex. If so, simply return.
++	 * When tap to wake is armed the bus stays with the AP: read the FIFO
++	 * without a bus reference, which would resume the controller.
+ 	 */
+-	if (fts_set_bus_ref(info, FTS_BUS_REF_IRQ, true) < 0) {
++	if (!tap_wake && fts_set_bus_ref(info, FTS_BUS_REF_IRQ, true) < 0) {
+ 		fts_set_bus_ref(info, FTS_BUS_REF_IRQ, false);
+ 		return IRQ_HANDLED;
+ 	}
+@@ -4418,6 +4534,11 @@
+ 
+ 			eventId = evt_data[0] >> 4;
+ 
++			if (tap_wake) {
++				fts_tap_wake_event(info, evt_data);
++				continue;
++			}
++
+ 			/* Ensure event ID is within bounds */
+ 			if (eventId < NUM_EVT_ID) {
+ 				processed_pointer_event = info->event_dispatch_table[eventId](
+@@ -4426,6 +4547,11 @@
+ 		}
+ 	}
+ 
++	if (tap_wake) {
++		pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
++		return IRQ_HANDLED;
++	}
++
+ #if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+ 	if (!info->offload.offload_running) {
+ #endif
+@@ -5476,14 +5602,22 @@
+ 	if (!info->sensor_sleep)
+ 		return;
+ 
++	if (READ_ONCE(info->tap_wake_armed)) {
++		/* the bus never left the AP: stop the double tap detection */
++		fts_enableInterrupt(false);
++		synchronize_irq(info->client->irq);
++		disable_irq_wake(info->client->irq);
++		WRITE_ONCE(info->tap_wake_armed, false);
++	} else {
+ #if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
+-	if (info->tbn)
+-		tbn_request_bus(info->tbn);
++		if (info->tbn)
++			tbn_request_bus(info->tbn);
+ #endif
+ 
+-	fts_set_switch_gpio(info, FTS_SWITCH_GPIO_VALUE_AP_MASTER);
++		fts_set_switch_gpio(info, FTS_SWITCH_GPIO_VALUE_AP_MASTER);
+ 
+-	fts_pinctrl_setup(info, true);
++		fts_pinctrl_setup(info, true);
++	}
+ 
+ 	__pm_wakeup_event(info->wakesrc, jiffies_to_msecs(HZ));
+ 
+@@ -5541,6 +5675,22 @@
+ 
+ 	info->resume_bit = 0;
+ 
++	if (READ_ONCE(info->tap_wake_enabled)) {
++		/*
++		 * Tap to wake: keep the controller scanning, with the bus and
++		 * the interrupt (as a wakeup source) on the AP, instead of
++		 * sense off and handing the bus to the ADSP.
++		 */
++		release_all_touches(info);
++		setScanMode(SCAN_MODE_ACTIVE, ACTIVE_MULTI_TOUCH);
++		memset(&info->tap, 0, sizeof(info->tap));
++		enable_irq_wake(info->client->irq);
++		WRITE_ONCE(info->tap_wake_armed, true);
++		info->sensor_sleep = true;
++		__pm_relax(info->wakesrc);
++		return;
++	}
++
+ 	fts_mode_handler(info, 0);
+ 
+ 	release_all_touches(info);
+@@ -6353,6 +6503,8 @@
+ 	input_set_abs_params(info->input_dev, ABS_MT_ORIENTATION, -4096, 4096,
+ 			     0, 0);
+ 
++	input_set_capability(info->input_dev, EV_KEY, KEY_POWER);
++
+ #ifdef GESTURE_MODE
+ 	input_set_capability(info->input_dev, EV_KEY, KEY_WAKEUP);
+ 
+@@ -6747,13 +6899,24 @@
+ 		return -EBUSY;
+ 	}
+ 
++	if (READ_ONCE(info->tap_wake_armed)) {
++		/* keep the irq wake, but handle it after the SPI bus resumed */
++		fts_enableInterrupt(false);
++		info->tap_wake_suspended = true;
++	}
++
+ 	return 0;
+ }
+ 
+ static int fts_pm_resume(struct device *dev)
+ {
++	struct fts_ts_info *info = dev_get_drvdata(dev);
++
++	if (info->tap_wake_suspended) {
++		info->tap_wake_suspended = false;
++		fts_enableInterrupt(true);
++	}
+ #ifdef SUPPORT_PROX_PALM
+-	struct fts_ts_info *info = dev_get_drvdata(dev);
+ 	mutex_lock(&info->bus_mutex);
+ 	if (info->pm_suspend_during_phone_call) {
+ 		if (info->bus_refmask != 0)
