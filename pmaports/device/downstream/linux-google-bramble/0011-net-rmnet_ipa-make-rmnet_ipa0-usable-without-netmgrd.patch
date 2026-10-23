@@ -1,0 +1,272 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: rmnet_ipa: make rmnet_ipa0 usable without netmgrd
+
+rmnet_ipa0 is the embedded data path to the modem through IPA. On Android
+netmgrd configures its WAN pipes with RMNET_IOCTL_SET_EGRESS_DATA_FORMAT
+and RMNET_IOCTL_SET_INGRESS_DATA_FORMAT before use, and the netdev has no
+parent device. ModemManager (qcom-soc plugin) expects a net port bound to
+the "ipa" driver and uses the kernel rmnet driver for QMAP muxing; it
+knows nothing about these ioctls and filters out virtual net devices.
+
+- Parent rmnet_ipa0 to the IPA core device, so udev and ModemManager see
+  the "ipa" driver (and the stock 77-mm-qcom-soc.rules match).
+- When the interface comes up and nobody has configured the pipes, set
+  QMAP formats: ingress map, demuxing and checksum (QMAPv5 headers on
+  this IPA v4.7), egress map and muxing with plain QMAP headers (the
+  modem accepts QMAPv5 uplink packets without the checksum header, so no
+  uplink checksum offload is needed). The ioctls still work as before.
+- Expose feature/rx_offload ("MAPv5") and feature/tx_offload ("none")
+  like the mainline IPA driver; ModemManager negotiates QMAPv5 with the
+  modem and reads these to set the rmnet link checksum flags (needs the
+  mainline flag values from the rmnet patch later in this series, and the
+  QMAPv5 frame sizing in ipa_dp.c).
+- The modem only sends a fragment rule for the embedded uplink pipe, so
+  other uplink packets missed the filter table and IPA routed them back
+  to the AP. Add a catch-all rule per IP family behind the modem's rules
+  that passes everything to the modem routing table its own rule uses.
+- Expose modem/{tx,rx}_endpoint_id on the IPA device like the mainline
+  IPA driver, so ModemManager opens the modem's DPM hardware data port
+  itself (the modem rejects WDA data format requests until it is open).
+
+---
+--- a/drivers/platform/msm/ipa/ipa_v3/rmnet_ipa.c	2026-10-23 19:49:30.994243700 +0100
++++ b/drivers/platform/msm/ipa/ipa_v3/rmnet_ipa.c	2026-10-23 21:42:54.787385295 +0100
+@@ -737,6 +737,119 @@
+ 	return 0;
+ }
+ 
++/*
++ * Without the Android data stack the modem only sends a fragment rule for
++ * the embedded uplink pipe, so every other uplink packet misses the filter
++ * table and IPA routes it through the default WAN table back to the AP.
++ * Behind the modem's rules, add one catch-all rule per IP family that
++ * passes everything to the routing table the modem's own rule for that
++ * family uses (a modem table that ends at the modem's WAN consumer). The
++ * QMAP mux id in each packet still selects the data call.
++ */
++/*
++ * ModemManager opens the modem's DPM hardware data port itself when the
++ * net port's device exposes the IPA endpoints like the mainline IPA driver
++ * does: <device>/modem/{tx,rx}_endpoint_id. tx is the AP-to-modem producer
++ * pipe, rx the AP's WAN consumer pipe.
++ */
++static ssize_t tx_endpoint_id_show(struct device *dev,
++				   struct device_attribute *attr, char *buf)
++{
++	return scnprintf(buf, PAGE_SIZE, "%d\n",
++			 ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_PROD));
++}
++
++static ssize_t rx_endpoint_id_show(struct device *dev,
++				   struct device_attribute *attr, char *buf)
++{
++	return scnprintf(buf, PAGE_SIZE, "%d\n",
++			 ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_CONS));
++}
++
++static DEVICE_ATTR_RO(tx_endpoint_id);
++static DEVICE_ATTR_RO(rx_endpoint_id);
++
++/*
++ * The QMAP checksum offload format the default data format above sets up;
++ * ModemManager reads <device>/feature/{rx,tx}_offload (mainline IPA sysfs)
++ * to create its rmnet links with matching checksum flags.
++ */
++static ssize_t rx_offload_show(struct device *dev,
++			       struct device_attribute *attr, char *buf)
++{
++	return scnprintf(buf, PAGE_SIZE, "%s\n",
++			 ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5 ?
++			 "MAPv5" : "MAPv4");
++}
++
++static ssize_t tx_offload_show(struct device *dev,
++			       struct device_attribute *attr, char *buf)
++{
++	return scnprintf(buf, PAGE_SIZE, "none\n");
++}
++
++static DEVICE_ATTR_RO(rx_offload);
++static DEVICE_ATTR_RO(tx_offload);
++
++static struct attribute *ipa3_wwan_feature_attrs[] = {
++	&dev_attr_rx_offload.attr,
++	&dev_attr_tx_offload.attr,
++	NULL,
++};
++
++static const struct attribute_group ipa3_wwan_feature_attr_group = {
++	.name = "feature",
++	.attrs = ipa3_wwan_feature_attrs,
++};
++
++static struct attribute *ipa3_wwan_modem_attrs[] = {
++	&dev_attr_tx_endpoint_id.attr,
++	&dev_attr_rx_endpoint_id.attr,
++	NULL,
++};
++
++static const struct attribute_group ipa3_wwan_modem_attr_group = {
++	.name = "modem",
++	.attrs = ipa3_wwan_modem_attrs,
++};
++
++static u32 ipa3_ul_catchall_hdl[IPA_IP_MAX];
++static bool ipa3_ul_catchall_set[IPA_IP_MAX];
++
++static void ipa3_wwan_add_ul_catchall_rules(struct ipa_ioc_add_flt_rule *param)
++{
++	struct ipa_flt_rule_add entry;
++	int ip, i;
++
++	for (ip = IPA_IP_v4; ip < IPA_IP_MAX; ip++) {
++		if (ipa3_ul_catchall_set[ip])
++			continue;
++		for (i = 0; i < rmnet_ipa3_ctx->num_q6_rules; i++)
++			if (ipa3_qmi_ctx->q6_ul_filter_rule[i].ip == ip)
++				break;
++		if (i == rmnet_ipa3_ctx->num_q6_rules)
++			continue;
++
++		memset(&entry, 0, sizeof(entry));
++		entry.at_rear = true;
++		entry.rule.action = IPA_PASS_TO_ROUTING;
++		entry.rule.rt_tbl_idx =
++			ipa3_qmi_ctx->q6_ul_filter_rule[i].rt_tbl_idx;
++		entry.rule.retain_hdr = true;
++		entry.rule.hashable = false;
++		param->ip = ip;
++		memcpy(&param->rules[0], &entry, sizeof(entry));
++		if (ipa3_add_flt_rule(param)) {
++			IPAWANERR("add UL catch-all rule (ip %d) failed\n", ip);
++			continue;
++		}
++		ipa3_ul_catchall_hdl[ip] = param->rules[0].flt_rule_hdl;
++		ipa3_ul_catchall_set[ip] = true;
++		IPAWANERR("UL catch-all rule (ip %d) to rt tbl %d\n", ip,
++			  entry.rule.rt_tbl_idx);
++	}
++}
++
+ static int ipa3_wwan_add_ul_flt_rule_to_ipa(void)
+ {
+ 	u32 pyld_sz;
+@@ -798,6 +911,8 @@
+ 		}
+ 	}
+ 
++	ipa3_wwan_add_ul_catchall_rules(param);
++
+ 	/* send ipa_fltr_installed_notif_req_msg_v01 to Q6*/
+ 	req->source_pipe_index =
+ 		ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_PROD);
+@@ -857,6 +972,18 @@
+ 		}
+ 	}
+ 
++	for (i = IPA_IP_v4; i < IPA_IP_MAX; i++) {
++		if (!ipa3_ul_catchall_set[i])
++			continue;
++		param->ip = i;
++		memset(&flt_rule_entry, 0, sizeof(flt_rule_entry));
++		flt_rule_entry.hdl = ipa3_ul_catchall_hdl[i];
++		memcpy(&param->hdl[0], &flt_rule_entry, sizeof(flt_rule_entry));
++		if (ipa3_del_flt_rule(param))
++			IPAWANERR("del UL catch-all rule (ip %d) failed\n", i);
++		ipa3_ul_catchall_set[i] = false;
++	}
++
+ 	/* set UL filter-rule add-indication */
+ 	rmnet_ipa3_ctx->a7_ul_flt_set = false;
+ 	rmnet_ipa3_ctx->old_num_q6_rules = 0;
+@@ -1149,11 +1276,54 @@
+  * 0: success
+  * -ENODEV: Error while opening logical channel on A2 MUX driver
+  */
++static int handle3_ingress_format(struct net_device *dev,
++			struct rmnet_ioctl_extended_s *in);
++static int handle3_egress_format(struct net_device *dev,
++			struct rmnet_ioctl_extended_s *e);
++
++/*
++ * On Android, netmgrd configures the WAN pipes with the
++ * RMNET_IOCTL_SET_EGRESS/INGRESS_DATA_FORMAT ioctls before it uses
++ * rmnet_ipa0. A generic Linux stack (ModemManager with the kernel rmnet
++ * driver for QMAP muxing) does not know these ioctls, so when nobody has
++ * configured the pipes yet, set up the QMAP formats netmgrd would use as
++ * the interface comes up. Downlink: QMAP with checksum offload, which is
++ * QMAPv5 (8-byte headers) from IPA v4.5 on. Uplink: plain QMAP headers;
++ * the modem accepts QMAPv5 uplink packets without the checksum header.
++ * feature/ below advertises the same.
++ */
++static void ipa3_wwan_default_data_format(struct net_device *dev)
++{
++	struct rmnet_ioctl_extended_s ext;
++
++	if (!rmnet_ipa3_ctx->egress_set) {
++		memset(&ext, 0, sizeof(ext));
++		ext.extended_ioctl = RMNET_IOCTL_SET_EGRESS_DATA_FORMAT;
++		ext.u.data = RMNET_IOCTL_EGRESS_FORMAT_MAP |
++			     RMNET_IOCTL_EGRESS_FORMAT_MUXING;
++		if (handle3_egress_format(dev, &ext))
++			IPAWANERR("[%s] default egress format failed\n",
++				  dev->name);
++	}
++
++	if (rmnet_ipa3_ctx->ipa3_to_apps_hdl == (u32)-1) {
++		memset(&ext, 0, sizeof(ext));
++		ext.extended_ioctl = RMNET_IOCTL_SET_INGRESS_DATA_FORMAT;
++		ext.u.data = RMNET_IOCTL_INGRESS_FORMAT_MAP |
++			     RMNET_IOCTL_INGRESS_FORMAT_DEMUXING |
++			     RMNET_IOCTL_INGRESS_FORMAT_CHECKSUM;
++		if (handle3_ingress_format(dev, &ext))
++			IPAWANERR("[%s] default ingress format failed\n",
++				  dev->name);
++	}
++}
++
+ static int ipa3_wwan_open(struct net_device *dev)
+ {
+ 	int rc = 0;
+ 
+ 	IPAWANDBG("[%s] wwan_open()\n", dev->name);
++	ipa3_wwan_default_data_format(dev);
+ 	rc = __ipa_wwan_open(dev);
+ 	if (rc == 0)
+ 		netif_start_queue(dev);
+@@ -2593,6 +2763,11 @@
+ 		ret = -ENOMEM;
+ 		goto alloc_netdev_err;
+ 	}
++	/*
++	 * Parent the netdev to the IPA core device, so it is not a virtual
++	 * device and userspace (udev, ModemManager) sees the "ipa" driver.
++	 */
++	SET_NETDEV_DEV(dev, &ipa3_ctx->master_pdev->dev);
+ 	rmnet_ipa3_ctx->wwan_priv = netdev_priv(dev);
+ 	memset(rmnet_ipa3_ctx->wwan_priv, 0,
+ 		sizeof(*(rmnet_ipa3_ctx->wwan_priv)));
+@@ -2639,6 +2814,12 @@
+ 	}
+ 
+ 	IPAWANDBG("IPA-WWAN devices (%s) initialization ok :>>>>\n", dev->name);
++	if (sysfs_create_group(&ipa3_ctx->master_pdev->dev.kobj,
++			       &ipa3_wwan_modem_attr_group))
++		IPAWANERR("failed to add the modem endpoint sysfs group\n");
++	if (sysfs_create_group(&ipa3_ctx->master_pdev->dev.kobj,
++			       &ipa3_wwan_feature_attr_group))
++		IPAWANERR("failed to add the feature sysfs group\n");
+ 	if (ret) {
+ 		IPAWANERR("default configuration failed rc=%d\n",
+ 				ret);
+@@ -2705,6 +2886,10 @@
+ 	if (ipa3_rmnet_res.ipa_napi_enable)
+ 		netif_napi_del(&(rmnet_ipa3_ctx->wwan_priv->napi));
+ 	mutex_unlock(&rmnet_ipa3_ctx->pipe_handle_guard);
++	sysfs_remove_group(&ipa3_ctx->master_pdev->dev.kobj,
++			   &ipa3_wwan_modem_attr_group);
++	sysfs_remove_group(&ipa3_ctx->master_pdev->dev.kobj,
++			   &ipa3_wwan_feature_attr_group);
+ 	IPAWANDBG("rmnet_ipa unregister_netdev started\n");
+ 	unregister_netdev(IPA_NETDEV());
+ 	IPAWANDBG("rmnet_ipa unregister_netdev completed\n");

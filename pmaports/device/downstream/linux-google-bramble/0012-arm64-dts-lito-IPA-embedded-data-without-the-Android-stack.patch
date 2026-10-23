@@ -1,0 +1,37 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] arm64: dts: lito: IPA embedded data without the Android stack
+
+Two IPA properties assume the Android data stack:
+
+- qcom,modem-cfg-emb-pipe-flt leaves the filter table of the embedded
+  uplink pipe (APPS_WAN_PROD) to the modem. Without the Android data
+  stack the modem never fills it, so IPA routed every uplink packet
+  through the default WAN routing table straight back to the AP (wan_rx
+  in ipa/stats counted each packet sent). Drop it so rmnet_ipa installs
+  the UL filter rules the modem sends over QMI.
+- qcom,wan-use-skb-page makes the WAN consumer pipe hand page-based
+  (non-linear) skbs to ipa3_wan_rx_pyld_hdlr(). Android uses the
+  coalescing pipe with NETIF_F_GRO_HW; on the plain WAN consumer the
+  status parser read garbage from the empty linear part and hit the
+  BUG_ON in skb_pull() on the first downlink packet. Drop it to get
+  linear receive buffers.
+
+---
+--- a/arch/arm64/boot/dts/vendor/qcom/lito.dtsi	2026-10-23 20:11:02.544365760 +0100
++++ b/arch/arm64/boot/dts/vendor/qcom/lito.dtsi	2026-10-23 20:57:16.664048959 +0100
+@@ -3565,7 +3565,6 @@
+ 		qcom,platform-type = <1>; /* MSM platform */
+ 		qcom,ee = <0>;
+ 		qcom,use-ipa-tethering-bridge;
+-		qcom,modem-cfg-emb-pipe-flt;
+ 		qcom,ipa-wdi2;
+ 		qcom,ipa-wdi2_over_gsi;
+ 		qcom,use-ipa-pm;
+@@ -3575,7 +3574,6 @@
+ 		qcom,ipa-endp-delay-wa;
+ 		qcom,use-64-bit-dma-mask;
+ 		qcom,msm-bus,name = "ipa";
+-		qcom,wan-use-skb-page;
+ 		qcom,msm-bus,num-cases = <5>;
+ 		qcom,msm-bus,num-paths = <5>;
+ 		qcom,msm-bus,vectors-KBps =

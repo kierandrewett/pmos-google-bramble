@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=21
+pkgrel=22
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -45,6 +45,11 @@ source="
 	0008-arm64-dts-lito-wcn3990-bluetooth-via-hci_qca.patch
 	0009-input-fts_touch-wake-on-a-double-tap-while-the-screen-is-off.patch
 	0010-Bluetooth-btqca-support-WCN3991.patch
+	0011-net-rmnet_ipa-make-rmnet_ipa0-usable-without-netmgrd.patch
+	0012-arm64-dts-lito-IPA-embedded-data-without-the-Android-stack.patch
+	0013-net-rmnet-link-rmnet-devices-to-their-real-device.patch
+	0014-msm-ipa3-size-QMAPv5-frames-on-the-WAN-consumer-pipe.patch
+	0015-net-rmnet-use-the-mainline-values-for-the-MAPv5-flags.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -108,4 +113,9 @@ f2111e9d45f6c3330e81a634f47d7dde40577dbfacc00b34f0622303d7b0a13d2814b32fc5f628a0
 72e41548c9f82c69883720140b7fd0776277216bd255b9ccd7872bf656783e753ac6c0384f28de0529ce3c219818bb33681a84cabaacc14b1113b6488f8be9af  0008-arm64-dts-lito-wcn3990-bluetooth-via-hci_qca.patch
 94ff5652e977450ef767fd78d0123aa396a7857278c7ceca350f951f916bf37e5556398f34c18f20db8b8c44db7a0c41b926113aded025d49ebc6cc5a8c5d1cb  0009-input-fts_touch-wake-on-a-double-tap-while-the-screen-is-off.patch
 407cf56d7259e18eca16fbb54c77141c8f4cb9424d48e43a07ec8b1033e4c3f3b5437c1b403be45c0e60a8bd07c4c9f16de661b07c0bcfe0e95ffb35eaa93ffd  0010-Bluetooth-btqca-support-WCN3991.patch
+d54e24bce2d147123774b2fd81c62a651ffffa1199ecaf907f10f4f58929224677280fbcaf3f1afcec8f9b70fea8ac2e4fd6d0bff6e4a7edcf1bf9448dfa6d1c  0011-net-rmnet_ipa-make-rmnet_ipa0-usable-without-netmgrd.patch
+df23ee834bb38a529bdfe967a848202eb396bdbd28dd794f3665cb9c515559698505187070899711477104fbc9d9845031f66667edcf4c0b1ee031ce432990f6  0012-arm64-dts-lito-IPA-embedded-data-without-the-Android-stack.patch
+1cfded0ff609802090996bc5d95879f6743cc7eecfc0a858d7a9de093278c1edfd66312a26e2e2abfbfe5c2d287c6908e64dde29aeae344c9e27849f36128c57  0013-net-rmnet-link-rmnet-devices-to-their-real-device.patch
+94dac8b07684ff196675c9b48e4a7925e36c8c6f5f551da21db9b0b817f25badcecdfed21113f8f774f86cf026f902d0cab4ad4751dbc7b66b0648b28d007b44  0014-msm-ipa3-size-QMAPv5-frames-on-the-WAN-consumer-pipe.patch
+430bdd6db2e21cbd66adeea915108b1bf5645870c79c483576e20ddd9d716116f92e2c402259eafe7753941fdac1da2f55a86507d3d2e0bf96880e25bee2e2b0  0015-net-rmnet-use-the-mainline-values-for-the-MAPv5-flags.patch
 "

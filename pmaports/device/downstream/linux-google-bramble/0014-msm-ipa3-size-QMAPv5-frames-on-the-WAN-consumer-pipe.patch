@@ -1,0 +1,49 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] msm: ipa3: size QMAPv5 frames on the WAN consumer pipe
+
+ipa3_wan_rx_pyld_hdlr() splits each received buffer into frames of
+status + 4-byte QMAP header + QMAP packet length (+ 8-byte MAPv4 trailer
+when the checksum was processed). With QMAPv5 downlink checksum offload
+(IPA v4.5+) the checksum result is in a 4-byte header after the QMAP
+header and there is no trailer, so this length is wrong. The modem also
+sends 4-byte packets with an empty QMAP header on this pipe. Each wrong
+length makes the next status parse from the wrong offset ("expected
+endp_dest_idx 16 received 12"), and the rest of the buffer is dropped.
+Android uses the coalescing pipe on IPA v4.5+ and does not reach this
+path; ModemManager negotiates QMAPv5 and does.
+
+For endpoints with QMAPv5 checksum offload, use the packet length from
+the status element, which includes the headers.
+
+---
+--- a/drivers/platform/msm/ipa/ipa_v3/ipa_dp.c	2026-10-23 22:03:09.527315739 +0100
++++ b/drivers/platform/msm/ipa/ipa_v3/ipa_dp.c	2026-10-23 22:47:39.492804496 +0100
+@@ -3250,10 +3250,24 @@
+ 		IPADBG_LOW("checksum_trailer_exists %d\n",
+ 				checksum_trailer_exists);
+ 
+-		frame_len = pkt_status_sz + IPA_QMAP_HEADER_LENGTH +
+-			    pkt_len_with_pad;
+-		if (checksum_trailer_exists)
+-			frame_len += IPA_DL_CHECKSUM_LENGTH;
++		/*
++		 * QMAPv5 with downlink checksum offload puts a 4-byte checksum
++		 * header after the QMAP header (hdr_len 8) instead of the
++		 * 8-byte MAPv4 trailer, so the length below is wrong for it,
++		 * and other sources (such as 4-byte packets from the modem
++		 * with an empty QMAP header) are shorter than the QMAP header
++		 * suggests. The status length covers the headers, so use it;
++		 * a wrong length makes the next status parse from the wrong
++		 * offset and drops the rest of the buffer.
++		 */
++		if (sys->ep->cfg.cfg.cs_offload_en == IPA_ENABLE_CS_DL_QMAP) {
++			frame_len = pkt_status_sz + status.pkt_len;
++		} else {
++			frame_len = pkt_status_sz + IPA_QMAP_HEADER_LENGTH +
++				    pkt_len_with_pad;
++			if (checksum_trailer_exists)
++				frame_len += IPA_DL_CHECKSUM_LENGTH;
++		}
+ 		IPADBG_LOW("frame_len %d\n", frame_len);
+ 
+ 		skb2 = skb_clone(skb, GFP_KERNEL);

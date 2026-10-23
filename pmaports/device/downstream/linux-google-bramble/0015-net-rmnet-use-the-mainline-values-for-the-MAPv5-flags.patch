@@ -1,0 +1,34 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: rmnet: use the mainline values for the MAPv5 flags
+
+This vendor copy numbers the rmnet netlink flags differently from mainline:
+INGRESS_COALESCE is bit 4 and the MAPv5 checksum flags are bits 5 and 6,
+where mainline (and so ModemManager, libqmi and iproute2) has
+INGRESS_MAP_CKSUMV5 at bit 4 and EGRESS_MAP_CKSUMV5 at bit 5.
+
+A link created for QMAPv5 downlink checksum offload therefore got
+INGRESS_COALESCE instead. The v5 header handler still ran, but
+deaggregation did not count the 4-byte checksum header, so every packet
+reached the network stack 4 bytes short and was dropped. An egress MAPv5
+request turned into an ingress flag, so uplink kept plain QMAP headers.
+
+Use the mainline values and move the vendor-only flags to bits 6 and 7.
+All users in the kernel use the symbolic names.
+
+---
+--- a/include/uapi/linux/if_link.h	2026-10-23 22:28:04.156229114 +0100
++++ b/include/uapi/linux/if_link.h	2026-10-23 22:28:04.170118760 +0100
+@@ -997,9 +997,10 @@
+ #define RMNET_FLAGS_INGRESS_MAP_COMMANDS          (1U << 1)
+ #define RMNET_FLAGS_INGRESS_MAP_CKSUMV4           (1U << 2)
+ #define RMNET_FLAGS_EGRESS_MAP_CKSUMV4            (1U << 3)
+-#define RMNET_FLAGS_INGRESS_COALESCE              (1U << 4)
+-#define RMNET_FLAGS_INGRESS_MAP_CKSUMV5           (1U << 5)
+-#define RMNET_FLAGS_EGRESS_MAP_CKSUMV5            (1U << 6)
++#define RMNET_FLAGS_INGRESS_MAP_CKSUMV5           (1U << 4)
++#define RMNET_FLAGS_EGRESS_MAP_CKSUMV5            (1U << 5)
++/* Vendor flags, kept clear of the mainline bits above */
++#define RMNET_FLAGS_INGRESS_COALESCE              (1U << 6)
+ #define RMNET_FLAGS_EGRESS_MAP_CKSUMV3            (1U << 7)
+ 
+ enum {

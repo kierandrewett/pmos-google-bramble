@@ -1,0 +1,58 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: rmnet: link rmnet devices to their real device
+
+Mainline rmnet calls netdev_upper_dev_link() for each rmnet device, which
+creates the lower_<dev>/upper_<dev> links in sysfs. This vendor copy does
+not. ModemManager follows lower_<dev> to match a QMAP link (qmapmux0.0 on
+rmnet_ipa0) with its modem; without it the link is filtered out as a
+virtual device and the data connection times out waiting for it.
+
+Link on newlink and unlink on dellink and when the real device goes away,
+as mainline does.
+
+---
+--- a/drivers/net/ethernet/qualcomm/rmnet/rmnet_config.c	2026-10-23 20:47:31.159637984 +0100
++++ b/drivers/net/ethernet/qualcomm/rmnet/rmnet_config.c	2026-10-23 20:47:31.171875006 +0100
+@@ -204,6 +204,15 @@
+ 	if (err)
+ 		goto err1;
+ 
++	/*
++	 * Record the real device as lower device (as mainline rmnet does), so
++	 * userspace can find it: ModemManager follows lower_<dev> in sysfs to
++	 * match a QMAP link with its modem.
++	 */
++	err = netdev_upper_dev_link(real_dev, dev, extack);
++	if (err < 0)
++		goto err2;
++
+ 	port->rmnet_mode = mode;
+ 
+ 	hlist_add_head_rcu(&ep->hlnode, &port->muxed_ep[mux_id]);
+@@ -230,6 +239,9 @@
+ 
+ 	return 0;
+ 
++err2:
++	unregister_netdevice(dev);
++	rmnet_vnd_dellink(mux_id, port, ep);
+ err1:
+ 	rmnet_unregister_real_device(real_dev, port);
+ err0:
+@@ -254,6 +266,8 @@
+ 
+ 	mux_id = rmnet_vnd_get_mux(dev);
+ 
++	netdev_upper_dev_unlink(real_dev, dev);
++
+ 	ep = rmnet_get_endpoint(port, mux_id);
+ 	if (ep) {
+ 		hlist_del_init_rcu(&ep->hlnode);
+@@ -294,6 +308,7 @@
+ 	rmnet_unregister_bridge(dev, port);
+ 
+ 	hash_for_each_safe(port->muxed_ep, bkt_ep, tmp_ep, ep, hlnode) {
++		netdev_upper_dev_unlink(real_dev, ep->egress_dev);
+ 		unregister_netdevice_queue(ep->egress_dev, &list);
+ 		rmnet_vnd_dellink(ep->mux_id, port, ep);
+ 
