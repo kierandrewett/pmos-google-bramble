@@ -1,0 +1,24 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: rmnet: fix NULL pointer dereference in rmnet_changelink()
+
+rmnet_changelink() looks up the real device from IFLA_LINK, which is
+optional. "ip link set dev qmapmux0.0 type rmnet ..." does not send it, so
+nla_get_u32(NULL) oopses with the RTNL lock held, and all later network
+configuration hangs until reboot.
+
+Use priv->real_dev, as the mainline fix with the same title does.
+
+---
+--- a/drivers/net/ethernet/qualcomm/rmnet/rmnet_config.c	2026-10-23 22:28:04.157507177 +0100
++++ b/drivers/net/ethernet/qualcomm/rmnet/rmnet_config.c	2026-10-23 22:28:04.170198121 +0100
+@@ -381,9 +381,7 @@
+ 	if (!dev)
+ 		return -ENODEV;
+ 
+-	real_dev = __dev_get_by_index(dev_net(dev),
+-				      nla_get_u32(tb[IFLA_LINK]));
+-
++	real_dev = priv->real_dev;
+ 	if (!real_dev || !rmnet_is_real_dev_registered(real_dev))
+ 		return -ENODEV;
+ 
