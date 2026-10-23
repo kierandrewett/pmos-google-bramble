@@ -3,7 +3,7 @@
 maintainer=""
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=5
+pkgrel=6
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -37,6 +37,7 @@ source="
 	0001-fbmem-guard-msm-ioctl-v2-hooks.patch
 	0002-drm-msm-link-fbdev-into-msm_drm-module.patch
 	0003-ipv4-handle-RTA_GATEWAY-set-to-0.patch
+	0007-input-drv2624-expose-haptics-as-FF_RUMBLE-input-device.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -92,4 +93,5 @@ da0896c0d0a08308a7eae52cc40505a17914a9adc981bce53c114af608354daf43b0ad3098696efc
 4269ab70bc24f5c9315a1a448f3f79cae6a2f1446b0832450886a1cc3f6103155f1564a3ba506ba3a9259d12202b2dd22a984e0b808dbce692a6c74656d2d3b3  0001-fbmem-guard-msm-ioctl-v2-hooks.patch
 177e68d0fde463c2c5b872d01acebeda0a64a1f7452f5a521776099fcd42f85c2d9aa84a9fbcd0740d8f7b53a902c4aed15cbb9f879195eb2c6a0669ca0dad01  0002-drm-msm-link-fbdev-into-msm_drm-module.patch
 f2111e9d45f6c3330e81a634f47d7dde40577dbfacc00b34f0622303d7b0a13d2814b32fc5f628a07a9bad69121d75ccfbe973ddff5dc5b3ba9d8ae2a6a35c70  0003-ipv4-handle-RTA_GATEWAY-set-to-0.patch
+7fb746a5895a9852e5b4cd62a1b097a749647d2ad5600098b95e8eb87c4f5e6b9c0f46091576339d1fd50c612e59dfa95eab9d7c1b0108433f518ae378b65e57  0007-input-drv2624-expose-haptics-as-FF_RUMBLE-input-device.patch
 "

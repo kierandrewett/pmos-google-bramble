@@ -1,0 +1,170 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] input: drv2624: expose haptics as an FF_RUMBLE input device
+
+The DRV2624 is only exposed through an Android-style LED class device
+(/sys/class/leds/vibrator), which feedbackd cannot use. Register an input
+device "drv2624-haptics" with memoryless force feedback (FF_RUMBLE; memless
+adds the periodic waveforms). The play callback maps the rumble magnitude
+to RTP_INPUT (0..127) and starts real-time playback from a work item; a
+zero magnitude stops it. The LED interface keeps working.
+---
+--- a/drivers/input/misc/drv2624.c
++++ b/drivers/input/misc/drv2624.c
+@@ -44,6 +44,7 @@
+ #include <linux/err.h>
+ #include <linux/clk.h>
+ #include <linux/sysfs.h>
++#include <linux/input.h>
+ 
+ #include "drv2624.h"
+ 
+@@ -267,13 +268,9 @@
+ 	mutex_unlock(&drv2624->lock);
+ }
+ 
+-static void drv2624_haptics_work(struct work_struct *work)
++static void drv2624_start_rtp(struct drv2624_data *drv2624)
+ {
+-	struct drv2624_data *drv2624 =
+-		container_of(work, struct drv2624_data, work);
+ 	int ret = 0;
+-
+-	mutex_lock(&drv2624->lock);
+ 
+ 	drv2624_stop(drv2624);
+ 
+@@ -291,7 +288,15 @@
+ 		drv2624->led_dev.brightness = LED_FULL;
+ 		drv2624->work_mode |= WORK_VIBRATOR;
+ 	}
++}
++
++static void drv2624_haptics_work(struct work_struct *work)
++{
++	struct drv2624_data *drv2624 =
++		container_of(work, struct drv2624_data, work);
+ 
++	mutex_lock(&drv2624->lock);
++	drv2624_start_rtp(drv2624);
+ 	mutex_unlock(&drv2624->lock);
+ }
+ 
+@@ -429,6 +434,78 @@
+ }
+ 
+ 
++#define DRV2624_FF_AMP_MAX	127
++
++static void drv2624_ff_work(struct work_struct *work)
++{
++	struct drv2624_data *drv2624 =
++		container_of(work, struct drv2624_data, ff_work);
++	unsigned int amp = READ_ONCE(drv2624->ff_amp);
++
++	mutex_lock(&drv2624->lock);
++
++	if (amp) {
++		drv2624_reg_write(drv2624, DRV2624_REG_RTP_INPUT, amp);
++		if (!drv2624->vibrator_playing)
++			drv2624_start_rtp(drv2624);
++	} else {
++		drv2624_stop(drv2624);
++		drv2624->led_dev.brightness = LED_OFF;
++	}
++
++	mutex_unlock(&drv2624->lock);
++}
++
++/*
++ * Memoryless effect callback. Runs in timer/event context, so only record
++ * the amplitude and defer the register writes to ff_work.
++ */
++static int drv2624_ff_play(struct input_dev *dev, void *data,
++			   struct ff_effect *effect)
++{
++	struct drv2624_data *drv2624 = data;
++	u16 mag = max(effect->u.rumble.strong_magnitude,
++		      effect->u.rumble.weak_magnitude);
++
++	WRITE_ONCE(drv2624->ff_amp,
++		   DIV_ROUND_UP(mag * DRV2624_FF_AMP_MAX, 0xffff));
++	queue_work(drv2624->drv2624_wq, &drv2624->ff_work);
++
++	return 0;
++}
++
++static int drv2624_ff_init(struct drv2624_data *drv2624)
++{
++	struct input_dev *input;
++	int err;
++
++	input = devm_input_allocate_device(drv2624->dev);
++	if (!input)
++		return -ENOMEM;
++
++	input->name = "drv2624-haptics";
++	input->id.bustype = BUS_I2C;
++	input_set_capability(input, EV_FF, FF_RUMBLE);
++
++	INIT_WORK(&drv2624->ff_work, drv2624_ff_work);
++
++	err = input_ff_create_memless(input, drv2624, drv2624_ff_play);
++	if (err) {
++		dev_err(drv2624->dev, "create memless ff failed: %d\n", err);
++		return err;
++	}
++
++	err = input_register_device(input);
++	if (err) {
++		dev_err(drv2624->dev, "register ff input failed: %d\n", err);
++		return err;
++	}
++
++	drv2624->input_dev = input;
++
++	return 0;
++}
++
+ static int drv2624_set_waveform(struct drv2624_data *drv2624,
+ 				struct drv2624_waveform_sequencer *sequencer)
+ {
+@@ -1755,6 +1832,10 @@
+ 	if (err)
+ 		goto drv2624_i2c_probe_err;
+ 
++	err = drv2624_ff_init(drv2624);
++	if (err)
++		goto drv2624_i2c_probe_err;
++
+ 	request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG, "drv2624.bin",
+ 				&client->dev, GFP_KERNEL, drv2624,
+ 				drv2624_firmware_load);
+@@ -1773,6 +1854,8 @@
+ {
+ 	struct drv2624_data *drv2624 = i2c_get_clientdata(client);
+ 
++	input_unregister_device(drv2624->input_dev);
++	cancel_work_sync(&drv2624->ff_work);
+ 	cancel_work_sync(&drv2624->vibrator_work);
+ 	cancel_work_sync(&drv2624->work);
+ 	destroy_workqueue(drv2624->drv2624_wq);
+@@ -1817,6 +1900,7 @@
+ 	cancel_work_sync(&drv2624->vibrator_work);
+ 	cancel_work_sync(&drv2624->work);
+ 	cancel_work_sync(&drv2624->stop_work);
++	cancel_work_sync(&drv2624->ff_work);
+ 	drv2624_stop(drv2624);
+ 
+ 	if (drv2624->lp_trigger_effect) {
+--- a/drivers/input/misc/drv2624.h
++++ b/drivers/input/misc/drv2624.h
+@@ -313,6 +313,9 @@
+ 	struct work_struct work;
+ 	struct work_struct stop_work;
+ 	struct led_classdev led_dev;
++	struct input_dev *input_dev;
++	struct work_struct ff_work;
++	unsigned int ff_amp;
+ 
+ 	struct drv2624_autocal_result auto_cal_result;
+ 	struct drv2624_diag_result diag_result;
