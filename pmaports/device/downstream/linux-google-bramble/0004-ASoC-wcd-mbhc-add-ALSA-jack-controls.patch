@@ -1,0 +1,34 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] ASoC: wcd-mbhc: add ALSA jack controls for the headset jack
+
+MBHC registers the headset jack as an input device only. PulseAudio and
+PipeWire follow ALSA jack controls (UCM JackControl), so they could not
+switch to headphones on plug-in. Add "Headphone Jack" and "Headset Mic
+Jack" controls to the same jack; snd_jack_report() keeps them in sync.
+
+---
+--- a/techpack/audio/asoc/codecs/wcd-mbhc-v2.c	2026-10-23 01:17:12.685159767 +0100
++++ b/techpack/audio/asoc/codecs/wcd-mbhc-v2.c	2026-10-23 01:17:12.703864925 +0100
+@@ -1846,6 +1846,22 @@
+ 			return ret;
+ 		}
+ 
++		/*
++		 * The jack above is only an input device. Desktop sound
++		 * servers (PulseAudio, PipeWire) follow ALSA jack controls
++		 * instead, so add "Headphone Jack" and "Headset Mic Jack".
++		 */
++		ret = snd_jack_add_new_kctl(mbhc->headset_jack.jack,
++					    "Headphone", SND_JACK_HEADPHONE);
++		if (ret)
++			pr_err("%s: Failed to add headphone jack kctl\n",
++			       __func__);
++		ret = snd_jack_add_new_kctl(mbhc->headset_jack.jack,
++					    "Headset Mic", SND_JACK_MICROPHONE);
++		if (ret)
++			pr_err("%s: Failed to add headset mic jack kctl\n",
++			       __func__);
++
+ 		ret = snd_soc_card_jack_new(component->card,
+ 					    "Button Jack",
+ 					    WCD_MBHC_JACK_BUTTON_MASK,
