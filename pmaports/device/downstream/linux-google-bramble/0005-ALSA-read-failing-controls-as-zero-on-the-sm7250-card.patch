@@ -1,0 +1,97 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] ALSA: read failing controls as zero on the sm7250 card
+
+alsa-lib's simple mixer (PulseAudio, PipeWire, amixer scontrols) reads
+every BOOLEAN, INTEGER and ENUMERATED mixer control while it loads, and
+gives up on the whole card at the first failed read. On the sm7250 card
+57 such controls fail: 29 are write-only (no get handler, -EPERM: voice
+and VoIP mute and gain, EC reference weights, DTMF detect, TDM slot map)
+and 28 can only be read while a DSP session runs (-EINVAL or -EAGAIN:
+audio effects, EQ, RMS, ASphere, external display). The volume getters
+of idle PCMs return -ENODEV as well. So PulseAudio could not attach the
+jack controls and never switched to headphones on plug-in.
+
+Add a per-card flag that makes failed control reads return zeros, and
+set it from the kona machine driver's late_probe, before the card is
+registered. Other cards keep the old behaviour.
+
+---
+--- a/include/sound/core.h	2026-10-23 17:15:45.665634754 +0100
++++ b/include/sound/core.h	2026-10-23 17:15:45.688149425 +0100
+@@ -103,6 +103,8 @@
+ 	char mixername[80];		/* mixer name */
+ 	char components[128];		/* card components delimited with
+ 								space */
++	bool ctl_zero_failed_reads;	/* control reads that fail return
++								zeros (snd_ctl_elem_read) */
+ 	struct module *module;		/* top-level module */
+ 
+ 	void *private_data;		/* private data for soundcard */
+--- a/sound/core/control.c	2026-10-23 17:15:45.666864488 +0100
++++ b/sound/core/control.c	2026-10-23 17:15:45.688352357 +0100
+@@ -889,6 +889,7 @@
+ 	struct snd_kcontrol *kctl;
+ 	struct snd_kcontrol_volatile *vd;
+ 	unsigned int index_offset;
++	int result;
+ 
+ 	kctl = snd_ctl_find_id(card, &control->id);
+ 	if (kctl == NULL)
+@@ -896,11 +897,24 @@
+ 
+ 	index_offset = snd_ctl_get_ioff(kctl, &control->id);
+ 	vd = &kctl->vd[index_offset];
+-	if (!(vd->access & SNDRV_CTL_ELEM_ACCESS_READ) || kctl->get == NULL)
+-		return -EPERM;
++	if (!(vd->access & SNDRV_CTL_ELEM_ACCESS_READ) || kctl->get == NULL) {
++		result = -EPERM;
++	} else {
++		snd_ctl_build_ioff(&control->id, kctl, index_offset);
++		result = kctl->get(kctl, control);
++	}
+ 
+-	snd_ctl_build_ioff(&control->id, kctl, index_offset);
+-	return kctl->get(kctl, control);
++	/*
++	 * Some vendor cards have write-only controls, or controls that can
++	 * only be read while a DSP session runs. alsa-lib's simple mixer
++	 * gives up on the whole card at the first failed read, so such a card
++	 * can ask for failed reads to return zeros instead.
++	 */
++	if (result < 0 && card->ctl_zero_failed_reads) {
++		memset(&control->value, 0, sizeof(control->value));
++		result = 0;
++	}
++	return result;
+ }
+ 
+ static int snd_ctl_elem_read_user(struct snd_card *card,
+--- a/techpack/audio/asoc/kona.c	2026-10-23 17:15:45.668157673 +0100
++++ b/techpack/audio/asoc/kona.c	2026-10-23 17:15:45.690043027 +0100
+@@ -8365,6 +8365,18 @@
+ 	{},
+ };
+ 
++/*
++ * Many q6 controls are write-only, or can only be read while a DSP session
++ * runs (volume, EQ, audio effects, voice, external display). Read them as
++ * zero, so that alsa-lib's simple mixer can load the card: PulseAudio and
++ * PipeWire need it for the headphone and headset mic jack controls.
++ */
++static int msm_snd_card_late_probe(struct snd_soc_card *card)
++{
++	card->snd_card->ctl_zero_failed_reads = true;
++	return 0;
++}
++
+ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
+ {
+ 	struct snd_soc_card *card = NULL;
+@@ -9455,6 +9467,7 @@
+ 	}
+ 
+ 	card->dev = &pdev->dev;
++	card->late_probe = msm_snd_card_late_probe;
+ 	platform_set_drvdata(pdev, card);
+ 	snd_soc_card_set_drvdata(card, pdata);
+ 
