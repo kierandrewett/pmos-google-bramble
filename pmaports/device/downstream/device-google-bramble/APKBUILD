@@ -2,7 +2,7 @@
 maintainer="Yurii Bishchuk <astellias@gmail.com>"
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=12
+pkgrel=13
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -44,6 +44,7 @@ source="
 	bramble-modem.initd
 	bramble-wlfw-bdf.py
 	NetworkManager-conf.d-bramble-unmanaged.conf
+	NetworkManager-conf.d-bramble-wowlan.conf
 	ucm/sm7250-bolero-snd-card.conf
 	ucm/HiFi.conf
 	bramble-firmware.initd
@@ -78,6 +79,8 @@ package() {
 	install -Dm755 "$srcdir"/bramble-wlfw-bdf.py "$pkgdir"/usr/libexec/bramble-wlfw-bdf
 	install -Dm644 "$srcdir"/NetworkManager-conf.d-bramble-unmanaged.conf \
 		"$pkgdir"/usr/lib/NetworkManager/conf.d/50-bramble-unmanaged.conf
+	install -Dm644 "$srcdir"/NetworkManager-conf.d-bramble-wowlan.conf \
+		"$pkgdir"/usr/lib/NetworkManager/conf.d/50-bramble-wowlan.conf
 
 	# ALSA UCM for the sm7250-bolero-snd-card sound card. alsa-lib looks it
 	# up by driver name, which the kernel cuts to "sm7250-bolero-s".
@@ -119,6 +122,7 @@ d8c63ce4de312710cfad58af37855f16320159060e64e9902d411990554fc37dc8d18acaba004d71
 624f72146c7bad17201df6fc0392f9de0fa731bacef98fae34c8058668465229905c6f133b01d6905b0eed0273f2a8c38608546d58192123be55ef84ada9d2f9  bramble-modem.initd
 7c24879b48e57c4535dcf0624b1c903abfe57cf140d08212972e76a5b2774f86b9987c11fd3388e6a9d6c011554d1e87505fdf58c6929fdae2f6964c72900ffc  bramble-wlfw-bdf.py
 737e2fe5fcf3d274531a0b5f6f2da984d6136a34971e549cd9c609854bfbae918848cc387842620af40f89648bce36b648241bf1216cf149c2feb1ece13b3a04  NetworkManager-conf.d-bramble-unmanaged.conf
+24e5809cf3916df1cf0d5a2a25e34cea678bdf7dce040fbe70de095d37c33113e3a8131771e3711af5c68831461ca2804f95e917bb12b04d316156aaff186ce6  NetworkManager-conf.d-bramble-wowlan.conf
 cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a8634165a2233ac11d7f8978ef0ee83b094cbddc22e7f347592b  sm7250-bolero-snd-card.conf
 d2a684cc540003548cf53188d880ff7afdf5eb13732224e0225e2b8fb7787bb81ff4f10eeb5ac3e691024bac6ba87bf067824589df09edd89a8e9efe99e2721a  HiFi.conf
 1660ffd7be8917dea919b9d07aa0e5866ec2b004cfeaa11a44fc657eab77165656e67cbffce7baef083234c8e968de598397e38c6a0953b646831823921fef87  bramble-firmware.initd
