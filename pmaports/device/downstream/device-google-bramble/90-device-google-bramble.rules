@@ -6,3 +6,8 @@
 # with them, so the greeter (user greetd) and the session user need access.
 SUBSYSTEM=="kgsl", KERNEL=="kgsl-3d0", MODE="0660", GROUP="video"
 KERNEL=="ion", MODE="0660", GROUP="video"
+
+# Haptics: kernel patch 0006 registers the DRV2624 as an FF_RUMBLE input
+# device. An FF-only device gets no ID_INPUT from input_id, and feedbackd
+# ignores devices without it, so tag it for feedbackd here.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="drv2624-haptics", ENV{ID_INPUT}="1", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
