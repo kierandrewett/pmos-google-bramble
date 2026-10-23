@@ -52,9 +52,14 @@ static void ensure_display_active(int fd) {
     }
     // Connector 29: DSI-1
     // Property 2: DPMS -> 0 (On)
-    // Property 37: autorefresh -> 1 (Auto-push frames in command mode)
+    // Property 37: autorefresh -> 0 (off). With autorefresh on, every
+    // commit on this command-mode panel first waits for the running
+    // transfer and then for the autorefresh disable sequence, so a page
+    // flip takes three TE periods (50 ms, 20 fps). The panel keeps showing
+    // the last frame by itself, so autorefresh is not needed. Set it
+    // explicitly because the property survives across DRM clients.
     drmModeObjectSetProperty(fd, 29, DRM_MODE_OBJECT_CONNECTOR, 2, 0);
-    drmModeObjectSetProperty(fd, 29, DRM_MODE_OBJECT_CONNECTOR, 37, 1);
+    drmModeObjectSetProperty(fd, 29, DRM_MODE_OBJECT_CONNECTOR, 37, 0);
 }
 
 int faccessat(int dirfd, const char *pathname, int mode, int flags) {

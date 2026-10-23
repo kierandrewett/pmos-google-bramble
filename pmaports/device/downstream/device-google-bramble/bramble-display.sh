@@ -11,8 +11,11 @@ export LD_PRELOAD=/usr/lib/libfix_drm_formats.so
 export WLR_DRM_DEVICES=/dev/dri/card0
 export WLR_NO_HARDWARE_CURSORS=1
 
-# Use Pixman CPU software rasterizer (MSM KMS + Pixman at 60 FPS)
-export WLR_RENDERER=pixman
+# Render on the Adreno GPU: OpenGL comes from Mesa's zink driver on top of
+# turnip (mesa-vulkan-freedreno-kgsl), because the downstream kernel only
+# has KGSL and no msm GPU DRM driver for Mesa's loader to find.
+export WLR_RENDERER=gles2
+export MESA_LOADER_DRIVER_OVERRIDE=zink
 
 # Seat & Input management
 export SEATD_VTBOUND=0
