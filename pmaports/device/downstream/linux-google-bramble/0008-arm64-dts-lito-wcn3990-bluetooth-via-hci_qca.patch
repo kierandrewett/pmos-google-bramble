@@ -1,0 +1,38 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] arm64: dts: lito: WCN3990 Bluetooth via hci_qca
+
+On Android the vendor bt_power driver powers the WCN3990 and the BT HAL
+talks HCI over the UART from userspace. Use the in-kernel hci_qca serdev
+driver instead, so BlueZ gets hci0: add a "qcom,wcn3990-bt" child to the
+qupv3 SE5 UART with the supplies hci_qca expects, mapped to the same
+regulators the vendor node uses. The vendor node stays enabled because
+the sound card depends on the BT FM SLIMbus codec, which needs it. Needs
+BT_HCIUART_QCA and the firmware links from bramble-firmware.
+
+---
+--- a/arch/arm64/boot/dts/vendor/qcom/lito.dtsi	2026-10-23 16:22:08.152399844 +0100
++++ b/arch/arm64/boot/dts/vendor/qcom/lito.dtsi	2026-10-23 16:22:08.154116348 +0100
+@@ -3955,3 +3955,23 @@
+ };
+ #include "lito-sde.dtsi"
+ #include "lito-sde-pll.dtsi"
++
++/*
++ * WCN3990 Bluetooth on the qupv3 SE5 UART, driven by the in-kernel hci_qca
++ * serdev driver (compatible "qcom,wcn3990-bt", drivers/bluetooth/hci_qca.c)
++ * so BlueZ gets hci0. The supplies are the regulators the vendor
++ * "bluetooth" node (bt_wcn3990) uses; regulators are reference-counted, so
++ * both can hold them. The vendor node must stay enabled: the BT FM
++ * SLIMbus codec (btfmslim) needs bt_power, and without that codec the
++ * sound card never probes. This lives in the base DT because the stock
++ * bramble dtbo does not touch these nodes.
++ */
++&qupv3_se5_4uart {
++	bluetooth {
++		compatible = "qcom,wcn3990-bt";
++		vddio-supply = <&pm8150_s4>;
++		vddxo-supply = <&pm8150_l14>;
++		vddrf-supply = <&pm8150a_l2>;
++		vddch0-supply = <&pm8150a_l10>;
++	};
++};

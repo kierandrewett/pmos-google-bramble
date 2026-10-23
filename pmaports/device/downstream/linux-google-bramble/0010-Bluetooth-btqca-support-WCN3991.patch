@@ -1,0 +1,280 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: postmarketOS <bramble@localhost>
+Date: Fri, 23 Oct 2026 12:00:00 +0000
+Subject: [PATCH] Bluetooth: btqca: support WCN3991 on the WCN3990 setup path
+
+The Pixel 4a 5G (bramble) Bluetooth controller is a WCN3991 but the
+device tree binds it with "qcom,wcn3990-bt", so the setup code takes the
+WCN3990 path. The WCN3991 version response is one byte longer than the
+WCN3990 one, so setup fails with:
+
+  QCA Version size mismatch len 15
+  QCA Failed to get version (-84)
+
+Detect WCN3991 at runtime, without a new DT compatible, and handle the
+differences needed for setup to complete:
+
+- Accept the 15-byte version response (the WCN3990 14-byte response is
+  still accepted unchanged). The response is logged once in hex so the
+  layout can be checked on hardware. WCN3991 puts a length byte (0x0c)
+  after the header; it is skipped before the version is parsed. The response type may be
+  EDL_PATCH_VER_RES_EVT as well as EDL_APP_VER_RES_EVT.
+
+- Detect WCN3991 from the SoC ID (0x40014320) carried in the upper bits of
+  soc_version, and use the NVM file "qca/crnv%02xu.bin" for it, as
+  mainline does.
+
+- Accept the WCN3991 answer to a TLV segment (rtype
+  EDL_PATCH_TLV_REQ_CMD, optional length and result bytes), logged once
+  in hex.
+
+- Write the UART baud rate into the NVM HCI tag at data[1] for the
+  WCN399x family instead of data[2] (mainline 7dc5fe0814c3, "Fix the NVM
+  baudrate tag offset for wcn3990"). With the wrong offset the controller
+  kept its default rate after the NVM download, the UART returned garbage
+  and HCI_RESET timed out.
+
+- For WCN3991, inject a command complete event after a firmware download
+  that skipped the vendor event, so the command credit is restored.
+
+Apart from the baud rate tag offset, WCN3990 behaviour is unchanged.
+---
+--- a/drivers/bluetooth/btqca.c	2026-10-23 18:31:45.447879931 +0100
++++ b/drivers/bluetooth/btqca.c	2026-10-23 19:06:01.251935400 +0100
+@@ -34,6 +34,7 @@
+ 	struct rome_version *ver;
+ 	char cmd;
+ 	int err = 0;
++	bool wcn3991;
+ 
+ 	bt_dev_dbg(hdev, "QCA Version Request");
+ 
+@@ -47,7 +48,13 @@
+ 		return err;
+ 	}
+ 
+-	if (skb->len != sizeof(*edl) + sizeof(*ver)) {
++	/* Log the raw response once so the layout can be confirmed */
++	bt_dev_info(hdev, "QCA Version response len %u: %*ph", skb->len,
++		    skb->len, skb->data);
++
++	/* WCN3991 prepends one byte to the version response */
++	wcn3991 = skb->len == sizeof(*edl) + sizeof(*ver) + 1;
++	if (skb->len != sizeof(*edl) + sizeof(*ver) && !wcn3991) {
+ 		bt_dev_err(hdev, "QCA Version size mismatch len %d", skb->len);
+ 		err = -EILSEQ;
+ 		goto out;
+@@ -61,13 +68,17 @@
+ 	}
+ 
+ 	if (edl->cresp != EDL_CMD_REQ_RES_EVT ||
+-	    edl->rtype != EDL_APP_VER_RES_EVT) {
++	    (edl->rtype != EDL_APP_VER_RES_EVT &&
++	     !(wcn3991 && edl->rtype == EDL_PATCH_VER_RES_EVT))) {
+ 		bt_dev_err(hdev, "QCA Wrong packet received %d %d", edl->cresp,
+ 			   edl->rtype);
+ 		err = -EIO;
+ 		goto out;
+ 	}
+ 
++	if (wcn3991)
++		memmove(edl->data, &edl->data[1], sizeof(*ver));
++
+ 	ver = (struct rome_version *)(edl->data);
+ 
+ 	BT_DBG("%s: Product:0x%08x", hdev->name, le32_to_cpu(ver->product_id));
+@@ -187,8 +198,13 @@
+ 				 */
+ 				tlv_nvm->data[0] |= 0x80;
+ 
+-				/* UART Baud Rate */
+-				tlv_nvm->data[2] = config->user_baud_rate;
++				/* UART Baud Rate: WCN399x keep it one byte
++				 * earlier (mainline 7dc5fe0814c3)
++				 */
++				if (config->wcn399x)
++					tlv_nvm->data[1] = config->user_baud_rate;
++				else
++					tlv_nvm->data[2] = config->user_baud_rate;
+ 
+ 				break;
+ 
+@@ -212,8 +228,10 @@
+ }
+ 
+ static int qca_tlv_send_segment(struct hci_dev *hdev, int seg_size,
+-				 const u8 *data, enum rome_tlv_dnld_mode mode)
++				 const u8 *data, enum rome_tlv_dnld_mode mode,
++				 bool wcn3991)
+ {
++	static bool logged;
+ 	struct sk_buff *skb;
+ 	struct edl_event_hdr *edl;
+ 	struct tlv_seg_resp *tlv_resp;
+@@ -236,6 +254,31 @@
+ 		return err;
+ 	}
+ 
++	/*
++	 * WCN3991 answers a segment with its own layout: cresp, rtype
++	 * (EDL_PATCH_TLV_REQ_CMD instead of EDL_TVL_DNLD_RES_EVT), then an
++	 * optional length byte and result. Log the first answer once.
++	 */
++	if (wcn3991) {
++		if (!logged) {
++			bt_dev_info(hdev, "QCA TLV response len %u: %*ph",
++				    skb->len, skb->len, skb->data);
++			logged = true;
++		}
++		edl = (struct edl_event_hdr *)(skb->data);
++		if (skb->len < sizeof(*edl) ||
++		    edl->cresp != EDL_CMD_REQ_RES_EVT ||
++		    (edl->rtype != EDL_TVL_DNLD_RES_EVT &&
++		     edl->rtype != EDL_PATCH_TLV_REQ_CMD) ||
++		    (skb->len > sizeof(*edl) + 1 &&
++		     skb->data[skb->len - 1] != 0x00)) {
++			bt_dev_err(hdev, "QCA TLV bad response len %u",
++				   skb->len);
++			err = -EIO;
++		}
++		goto out;
++	}
++
+ 	if (skb->len != sizeof(*edl) + sizeof(*tlv_resp)) {
+ 		bt_dev_err(hdev, "QCA TLV response size mismatch");
+ 		err = -EILSEQ;
+@@ -264,12 +307,38 @@
+ 	return err;
+ }
+ 
++static int qca_inject_cmd_complete_event(struct hci_dev *hdev)
++{
++	struct hci_event_hdr *hdr;
++	struct hci_ev_cmd_complete *evt;
++	struct sk_buff *skb;
++
++	skb = bt_skb_alloc(sizeof(*hdr) + sizeof(*evt) + 1, GFP_KERNEL);
++	if (!skb)
++		return -ENOMEM;
++
++	hdr = skb_put(skb, sizeof(*hdr));
++	hdr->evt = HCI_EV_CMD_COMPLETE;
++	hdr->plen = sizeof(*evt) + 1;
++
++	evt = skb_put(skb, sizeof(*evt));
++	evt->ncmd = 1;
++	evt->opcode = cpu_to_le16(QCA_HCI_CC_OPCODE);
++
++	skb_put_u8(skb, QCA_HCI_CC_SUCCESS);
++
++	hci_skb_pkt_type(skb) = HCI_EVENT_PKT;
++
++	return hci_recv_frame(hdev, skb);
++}
++
+ static int qca_download_firmware(struct hci_dev *hdev,
+ 				  struct rome_config *config)
+ {
+ 	const struct firmware *fw;
+ 	const u8 *segment;
+ 	int ret, remain, i = 0;
++	enum rome_tlv_dnld_mode dnld_type;
+ 
+ 	bt_dev_info(hdev, "QCA Downloading %s", config->fwname);
+ 
+@@ -281,6 +350,7 @@
+ 	}
+ 
+ 	qca_tlv_check_data(config, fw);
++	dnld_type = config->dnld_mode;
+ 
+ 	segment = fw->data;
+ 	remain = fw->size;
+@@ -295,13 +365,21 @@
+ 			config->dnld_mode = ROME_SKIP_EVT_NONE;
+ 
+ 		ret = qca_tlv_send_segment(hdev, segsize, segment,
+-					    config->dnld_mode);
++					    config->dnld_mode, config->wcn3991);
+ 		if (ret)
+ 			break;
+ 
+ 		segment += segsize;
+ 	}
+ 
++	/* WCN3991 does not return a command credit for segments sent with
++	 * a skipped VSE, so inject a command complete event to restore it.
++	 */
++	if (!ret && config->wcn3991 &&
++	    (dnld_type == ROME_SKIP_EVT_VSE_CC ||
++	     dnld_type == ROME_SKIP_EVT_VSE))
++		ret = qca_inject_cmd_complete_event(hdev);
++
+ 	release_firmware(fw);
+ 
+ 	return ret;
+@@ -341,6 +419,8 @@
+ 	bt_dev_dbg(hdev, "QCA setup on UART");
+ 
+ 	config.user_baud_rate = baudrate;
++	config.wcn3991 = false;
++	config.wcn399x = soc_type == QCA_WCN3990;
+ 
+ 	/* Download rampatch file */
+ 	config.type = TLV_TYPE_PATCH;
+@@ -352,6 +432,8 @@
+ 			    (soc_ver & 0x0000000f);
+ 		snprintf(config.fwname, sizeof(config.fwname),
+ 			 "qca/crbtfw%02x.tlv", rom_ver);
++		/* WCN3991 uses the WCN3990 firmware flow with its own NVM */
++		config.wcn3991 = (soc_ver >> 16) == QCA_WCN3991_SOC_VER_ID;
+ 	} else {
+ 		snprintf(config.fwname, sizeof(config.fwname),
+ 			 "qca/rampatch_%08x.bin", soc_ver);
+@@ -368,12 +450,17 @@
+ 
+ 	/* Download NVM configuration */
+ 	config.type = TLV_TYPE_NVM;
+-	if (soc_type == QCA_WCN3990)
+-		snprintf(config.fwname, sizeof(config.fwname),
+-			 "qca/crnv%02x.bin", rom_ver);
+-	else
++	if (soc_type == QCA_WCN3990) {
++		if (config.wcn3991)
++			snprintf(config.fwname, sizeof(config.fwname),
++				 "qca/crnv%02xu.bin", rom_ver);
++		else
++			snprintf(config.fwname, sizeof(config.fwname),
++				 "qca/crnv%02x.bin", rom_ver);
++	} else {
+ 		snprintf(config.fwname, sizeof(config.fwname),
+ 			 "qca/nvm_%08x.bin", soc_ver);
++	}
+ 
+ 	err = qca_download_firmware(hdev, &config);
+ 	if (err < 0) {
+--- a/drivers/bluetooth/btqca.h	2026-10-23 18:31:45.451104095 +0100
++++ b/drivers/bluetooth/btqca.h	2026-10-23 19:06:01.251644866 +0100
+@@ -40,6 +40,13 @@
+ #define QCA_WCN3990_POWERON_PULSE	0xFC
+ #define QCA_WCN3990_POWEROFF_PULSE	0xC0
+ 
++#define QCA_WCN3991_SOC_ID		(0x40014320)
++/* soc_version keeps only the low 16 bits of the SoC ID */
++#define QCA_WCN3991_SOC_VER_ID		(QCA_WCN3991_SOC_ID & 0xffff)
++
++#define QCA_HCI_CC_OPCODE		(0xFC00)
++#define QCA_HCI_CC_SUCCESS		(0x00)
++
+ enum qca_bardrate {
+ 	QCA_BAUDRATE_115200 	= 0,
+ 	QCA_BAUDRATE_57600,
+@@ -81,6 +88,8 @@
+ 	char fwname[64];
+ 	uint8_t user_baud_rate;
+ 	enum rome_tlv_dnld_mode dnld_mode;
++	bool wcn3991;
++	bool wcn399x;
+ };
+ 
+ struct edl_event_hdr {
