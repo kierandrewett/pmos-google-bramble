@@ -1,4 +1,4 @@
-# Maintainer: Kieran Drewett <kieran@drewett.dev>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=qrtr-ns
 pkgver=1.2
 pkgrel=0

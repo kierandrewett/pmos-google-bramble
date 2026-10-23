@@ -1,4 +1,4 @@
-# Maintainer: Kieran Drewett <kieran@drewett.dev>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
 #
 # Turnip (Mesa's Vulkan driver for Adreno) built for the downstream KGSL
 # kernel driver. Alpine's mesa builds freedreno for the upstream msm DRM

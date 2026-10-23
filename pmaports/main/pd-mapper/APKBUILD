@@ -1,4 +1,4 @@
-# Maintainer: Kieran Drewett <kieran@drewett.dev>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=pd-mapper
 pkgver=1.1
 pkgrel=0
