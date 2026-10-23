@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=20
+pkgrel=21
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -54,6 +54,7 @@ source="
 	start_gui.sh
 	10-bramble-env.conf
 	bramble-environment.conf
+	wireplumber-bramble.conf
 	"
 options="!archcheck !check"
 
@@ -94,6 +95,11 @@ package() {
 	ln -s ../../Google/bramble/sm7250-bolero-snd-card.conf \
 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/sm7250-bolero-s/sm7250-bolero-snd-card.conf
 
+	# WirePlumber (PipeWire audio backend): no compress-offload device and
+	# no camera monitors, see the file.
+	install -Dm644 "$srcdir"/wireplumber-bramble.conf \
+		"$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/51-bramble.conf
+
 	# Global environment profile
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/etc/profile.d/bramble-display.sh
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/usr/share/tinydm/env-wayland.d/20-bramble.sh
@@ -132,4 +138,5 @@ cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a863
 27f890feb672dc06c404415553bb289d0f576a3fafef368246a8a3364a47682a5a46e9b00fb7c76a67e179ed90d064c04f162401c5198d1183dc7764647e945d  start_gui.sh
 72792eddbb0b8317dce3147fccfb469525f241a4610f74970d71c04c2421c91d70e1d325f1e235671be3f7ed5e93796c6a258fa5415baf1f7a52e5e8c949c2a1  10-bramble-env.conf
 470c4dae7b47d79bf78c85a8a1e1e23e7c428ca72018c956f416f861892ec9c3178b55f3911da500fab098310154c6083316ab56deeedf5b22cfd347965d053d  bramble-environment.conf
+89ae0da627647fbb716f4a52577904cd8acab8515fde7a23e64e529e053099e90468a496aaf999f0760ea0e2920e39a082476ef79e551baf7d57b7c153af9d95  wireplumber-bramble.conf
 "
