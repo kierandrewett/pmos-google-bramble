@@ -1,0 +1,93 @@
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+#
+# Turnip (Mesa's Vulkan driver for Adreno) built for the downstream KGSL
+# kernel driver. Alpine's mesa builds freedreno for the upstream msm DRM
+# driver only (-Dfreedreno-kmds=msm,virtio), which downstream Android
+# kernels such as google-bramble's 4.19 do not have. OpenGL comes from
+# Alpine's zink driver running on top of this Vulkan driver.
+#
+# Only the Vulkan driver is built and installed, under its own file names,
+# so this package can sit next to Alpine's mesa packages.
+#
+# Build the msm backend too: with kgsl alone, meson drops libdrm, which
+# compiles out the DRM image paths of the Vulkan WSI while the Wayland and
+# headless swapchains still use them (undefined behaviour, crash in
+# wsi_create_image). The msm backend skips display-only DRM devices.
+pkgname=mesa-vulkan-freedreno-kgsl
+pkgver=26.2.5
+pkgrel=0
+pkgdesc="Mesa Turnip Vulkan driver for Adreno GPUs on downstream KGSL kernels"
+url="https://www.mesa3d.org"
+arch="aarch64"
+license="MIT AND SGI-B-2.0 AND BSL-1.0"
+depends="vulkan-loader"
+makedepends="
+	bison
+	expat-dev
+	flex
+	glslang-dev
+	libdisplay-info-dev
+	libdrm-dev
+	libx11-dev
+	libxcb-dev
+	libxrandr-dev
+	libxshmfence-dev
+	meson
+	py3-mako
+	py3-packaging
+	py3-ply
+	py3-yaml
+	python3
+	wayland-dev
+	wayland-protocols
+	zlib-dev
+	zstd-dev
+	"
+source="https://archive.mesa3d.org/mesa-$pkgver.tar.xz
+	0001-turnip-kgsl-report-DRM-nodes-of-the-display-device.patch
+	"
+builddir="$srcdir/mesa-$pkgver"
+options="!check"
+
+build() {
+	abuild-meson \
+		-Db_lto=false \
+		-Dgallium-drivers= \
+		-Dvulkan-drivers=freedreno \
+		-Dfreedreno-kmds=msm,kgsl \
+		-Dplatforms=wayland,x11 \
+		-Dglx=disabled \
+		-Degl=disabled \
+		-Dgbm=disabled \
+		-Dopengl=false \
+		-Dgles1=disabled \
+		-Dgles2=disabled \
+		-Dllvm=disabled \
+		-Dvideo-codecs= \
+		-Dvulkan-layers= \
+		-Dtools= \
+		-Dxlib-lease=disabled \
+		-Dvalgrind=disabled \
+		-Dlibunwind=disabled \
+		-Dlmsensors=disabled \
+		-Dbuild-tests=false \
+		. output
+	meson compile -C output
+}
+
+package() {
+	local _icd="$pkgdir"/usr/share/vulkan/icd.d
+
+	install -Dm755 output/src/freedreno/vulkan/libvulkan_freedreno.so \
+		"$pkgdir"/usr/lib/libvulkan_freedreno_kgsl.so
+	mkdir -p "$_icd"
+	sed 's/libvulkan_freedreno\.so/libvulkan_freedreno_kgsl.so/' \
+		output/src/freedreno/vulkan/freedreno_icd.aarch64.json \
+		> "$_icd"/freedreno_kgsl_icd.aarch64.json
+	grep -q libvulkan_freedreno_kgsl.so "$_icd"/freedreno_kgsl_icd.aarch64.json
+}
+
+sha512sums="
+08c7d7ea426ddfb0f7bc51b06e18c363a4d31cf1a8b203828bb455eda0189e41d2215eb9f627585ed11e0d0f231a6a8c9f0c7176238760cd76b62e20c35ccd6a  mesa-26.2.5.tar.xz
+76144fe06893cd6b3c69d9cdddc0ae12b551db0bc3fda21bebde5f4c49d24925c08ff9ff0cd7d9f2c1968c3e56997becc3bac57fc639c81acafed0fb19b46310  0001-turnip-kgsl-report-DRM-nodes-of-the-display-device.patch
+"

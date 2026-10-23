@@ -1,0 +1,88 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] turnip/kgsl: report the DRM nodes of the display device
+
+On downstream Android kernels the Adreno GPU is only reachable through
+KGSL, so turnip reports no VK_EXT_physical_device_drm nodes. zink's DRM
+screen (used by EGL/GBM) and wlroots' Vulkan renderer both pick the
+Vulkan device whose DRM render node matches their DRM device, so neither
+can use turnip on these kernels.
+
+Report the first DRM render node and primary node, which on these SoCs
+belong to the display controller (msm_drm). The display controller and
+KGSL share buffers through dma-buf, which turnip already supports with
+ION or dma-heap allocations.
+
+---
+--- a/src/freedreno/vulkan/tu_device.cc	2026-10-22 23:48:43.195484261 +0100
++++ b/src/freedreno/vulkan/tu_device.cc	2026-10-22 23:48:43.212037676 +0100
+@@ -353,7 +353,7 @@
+       .EXT_mutable_descriptor_type = true,
+       .EXT_nested_command_buffer = true,
+       .EXT_non_seamless_cube_map = true,
+-      .EXT_physical_device_drm = !is_kgsl(device->instance),
++      .EXT_physical_device_drm = !is_kgsl(device->instance) || device->has_local,
+       .EXT_pipeline_creation_cache_control = true,
+       .EXT_pipeline_creation_feedback = true,
+ #ifdef TU_USE_WSI_PLATFORM
+--- a/src/freedreno/vulkan/tu_knl_kgsl.cc	2026-10-22 23:48:43.195279100 +0100
++++ b/src/freedreno/vulkan/tu_knl_kgsl.cc	2026-10-22 23:48:53.459228347 +0100
+@@ -10,6 +10,9 @@
+ #include <stdint.h>
+ #include <sys/ioctl.h>
+ #include <sys/mman.h>
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#include <stdio.h>
+ 
+ #define __user
+ #include "ion/ion.h"
+@@ -1785,6 +1788,40 @@
+    return value;
+ }
+ 
++/* Downstream Android kernels expose the Adreno GPU through KGSL only, with
++ * no DRM node of its own. zink and wlroots choose the Vulkan device whose
++ * VK_EXT_physical_device_drm nodes match their DRM (display) device, so
++ * report the first DRM device that has a render node. On these SoCs that is
++ * the display controller (msm_drm), which shares buffers with KGSL through
++ * dma-buf.
++ */
++static void
++kgsl_adopt_drm_nodes(struct tu_physical_device *device)
++{
++   struct stat st;
++   char path[64];
++
++   for (unsigned n = 128; n < 192; n++) {
++      snprintf(path, sizeof(path), "/dev/dri/renderD%u", n);
++      if (stat(path, &st) == 0 && S_ISCHR(st.st_mode)) {
++         device->has_local = true;
++         device->local_major = major(st.st_rdev);
++         device->local_minor = minor(st.st_rdev);
++         break;
++      }
++   }
++
++   for (unsigned n = 0; n < 64; n++) {
++      snprintf(path, sizeof(path), "/dev/dri/card%u", n);
++      if (stat(path, &st) == 0 && S_ISCHR(st.st_mode)) {
++         device->has_master = true;
++         device->master_major = major(st.st_rdev);
++         device->master_minor = minor(st.st_rdev);
++         break;
++      }
++   }
++}
++
+ VkResult
+ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
+ {
+@@ -1948,6 +1985,8 @@
+ 
+    instance->knl = &kgsl_knl_funcs;
+ 
++   kgsl_adopt_drm_nodes(device);
++
+    result = tu_physical_device_init(device, instance);
+    if (result != VK_SUCCESS)
+       goto fail;
