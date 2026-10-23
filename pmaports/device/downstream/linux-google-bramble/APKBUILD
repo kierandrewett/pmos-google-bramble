@@ -1,6 +1,7 @@
 # Reference: <https://postmarketos.org/vendorkernel>
 # Kernel config based on: LineageOS 23.2 running config (dumped from device)
-maintainer=""
+maintainer="Yurii Bishchuk <astellias@gmail.com>"
+# Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
 pkgrel=13
