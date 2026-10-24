@@ -1,0 +1,33 @@
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+# Halium 14 generic system image (LineageOS 21 based, built by the UBports
+# CI and packaged by Droidian). It provides the Android 14 system side
+# (init, servicemanagers, cameraserver, libhybris helpers) for running a
+# phone's own vendor HALs in a container; see bramble-android-hal.
+pkgname=halium-gsi-34
+pkgver=14.0.0_p47
+_droidian="14.0.0%2Br47.20260730.ubports.460%2Bgit20260630121416.6478b73.next.production"
+pkgrel=0
+pkgdesc="Halium 14 Android system image (GSI) for vendor HAL containers"
+url="https://github.com/droidian/android-system-gsi-34-bin"
+arch="aarch64"
+# AOSP/LineageOS system image: mostly Apache-2.0, with components under
+# other free licences.
+license="Apache-2.0 AND GPL-2.0-only AND BSD-3-Clause"
+makedepends="binutils xz"
+options="!check !strip !tracedeps"
+source="android-system-gsi-34-$pkgver.deb::https://production.repo.droidian.org/pool/main/a/android-system-gsi-34-bin/android-system-gsi-34_${_droidian}_arm64.deb"
+
+unpack() {
+	mkdir -p "$srcdir"/deb
+	cd "$srcdir"/deb
+	ar x "$srcdir"/android-system-gsi-34-$pkgver.deb
+	tar -xf data.tar.xz ./var/lib/lxc/android/android-rootfs.img
+}
+
+package() {
+	install -Dm644 "$srcdir"/deb/var/lib/lxc/android/android-rootfs.img \
+		"$pkgdir"/usr/share/halium/android-rootfs-34.img
+}
+sha512sums="
+ce7a57f4b58afe8b812ef04f7a7bc685a729ce04e416aa2a1612444797cdfb9af633696ef7bfa87a18e800f0b77ddb1b0f0291f23be5580be2388019917d8975  android-system-gsi-34-14.0.0_p47.deb
+"
