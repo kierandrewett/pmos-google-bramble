@@ -43,6 +43,7 @@ struct camera {
 	const char *name;
 	const char *description;
 	const char *id;     // Android camera id
+	const char *location; // "back" or "front", for the viewfinder mirroring
 	int rotation;       // clockwise rotation to portrait: 90 or 270
 	int out_w, out_h;   // after rotation
 
@@ -326,6 +327,10 @@ static int setup_camera(struct camera *c, struct pw_main_loop *loop)
 		PW_KEY_NODE_NAME, c->name,
 		PW_KEY_NODE_DESCRIPTION, c->description,
 		PW_KEY_NODE_PAUSE_ON_IDLE, "true",
+		// Camera apps (Snapshot) mirror the preview unless they know the
+		// camera faces away from the user; the libcamera property is the
+		// one they read.
+		"api.libcamera.location", c->location,
 		NULL);
 	c->stream = pw_stream_new_simple(pw_main_loop_get_loop(loop), c->name, props, &stream_events, c);
 	if (c->stream == NULL)
@@ -352,8 +357,8 @@ static void on_signal(void *data, int sig)
 int main(int argc, char *argv[])
 {
 	struct camera cameras[] = {
-		{ .name = "bramble-camera-back", .description = "Back camera", .id = "0", .rotation = 90 },
-		{ .name = "bramble-camera-front", .description = "Front camera", .id = "1", .rotation = 270 },
+		{ .name = "bramble-camera-back", .description = "Back camera", .id = "0", .location = "back", .rotation = 90 },
+		{ .name = "bramble-camera-front", .description = "Front camera", .id = "1", .location = "front", .rotation = 270 },
 	};
 	struct pw_main_loop *loop;
 	int res;
