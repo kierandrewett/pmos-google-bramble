@@ -1,0 +1,121 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] procfs: let processes read their own fdinfo when not dumpable
+
+polkit 127 pins every caller with a pidfd and reads the PID back from
+/proc/self/fdinfo/<fd>. On this kernel the fdinfo directory is mode 0500
+and its files 0400, owned by root while the task is not dumpable.
+polkitd drops to its own user and is not dumpable, so the read fails
+with EACCES and every polkit check ends in "Process not found". Phosh
+and GNOME Settings then cannot turn Wi-Fi or mobile data on or off.
+
+Backport the access rule from mainline 7bc3fa0172a4 ("procfs: prevent
+unprivileged processes accessing fdinfo dir") and the mode change that
+went with it: the directory and files are readable by mode, and lookup
+and open require PTRACE_MODE_READ access to the task, which a task
+always has to itself.
+
+---
+--- a/fs/proc/base.c	2026-10-24 00:20:29.437155326 +0100
++++ b/fs/proc/base.c	2026-10-24 00:20:29.453850284 +0100
+@@ -3418,7 +3418,7 @@
+ 	DIR("task",       S_IRUGO|S_IXUGO, proc_task_inode_operations, proc_task_operations),
+ 	DIR("fd",         S_IRUSR|S_IXUSR, proc_fd_inode_operations, proc_fd_operations),
+ 	DIR("map_files",  S_IRUSR|S_IXUSR, proc_map_files_inode_operations, proc_map_files_operations),
+-	DIR("fdinfo",     S_IRUSR|S_IXUSR, proc_fdinfo_inode_operations, proc_fdinfo_operations),
++	DIR("fdinfo",     S_IRUGO|S_IXUGO, proc_fdinfo_inode_operations, proc_fdinfo_operations),
+ 	DIR("ns",	  S_IRUSR|S_IXUGO, proc_ns_dir_inode_operations, proc_ns_dir_operations),
+ #ifdef CONFIG_NET
+ 	DIR("net",        S_IRUGO|S_IXUGO, proc_net_inode_operations, proc_net_operations),
+@@ -3832,7 +3832,7 @@
+  */
+ static const struct pid_entry tid_base_stuff[] = {
+ 	DIR("fd",        S_IRUSR|S_IXUSR, proc_fd_inode_operations, proc_fd_operations),
+-	DIR("fdinfo",    S_IRUSR|S_IXUSR, proc_fdinfo_inode_operations, proc_fdinfo_operations),
++	DIR("fdinfo",    S_IRUGO|S_IXUGO, proc_fdinfo_inode_operations, proc_fdinfo_operations),
+ 	DIR("ns",	 S_IRUSR|S_IXUGO, proc_ns_dir_inode_operations, proc_ns_dir_operations),
+ #ifdef CONFIG_NET
+ 	DIR("net",        S_IRUGO|S_IXUGO, proc_net_inode_operations, proc_net_operations),
+--- a/fs/proc/fd.c	2026-10-24 00:20:29.437306407 +0100
++++ b/fs/proc/fd.c	2026-10-24 00:20:29.454029857 +0100
+@@ -7,6 +7,7 @@
+ #include <linux/namei.h>
+ #include <linux/pid.h>
+ #include <linux/security.h>
++#include <linux/ptrace.h>
+ #include <linux/file.h>
+ #include <linux/seq_file.h>
+ #include <linux/fs.h>
+@@ -69,8 +70,30 @@
+ 	return 0;
+ }
+ 
++static int proc_fdinfo_access_allowed(struct inode *inode)
++{
++	bool allowed = false;
++	struct task_struct *task = get_proc_task(inode);
++
++	if (!task)
++		return -ESRCH;
++
++	allowed = ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
++	put_task_struct(task);
++
++	if (!allowed)
++		return -EACCES;
++
++	return 0;
++}
++
+ static int seq_fdinfo_open(struct inode *inode, struct file *file)
+ {
++	int ret = proc_fdinfo_access_allowed(inode);
++
++	if (ret)
++		return ret;
++
+ 	return single_open(file, seq_show, inode);
+ }
+ 
+@@ -325,7 +348,7 @@
+ 	struct proc_inode *ei;
+ 	struct inode *inode;
+ 
+-	inode = proc_pid_make_inode(dentry->d_sb, task, S_IFREG | S_IRUSR);
++	inode = proc_pid_make_inode(dentry->d_sb, task, S_IFREG | S_IRUGO);
+ 	if (!inode)
+ 		return ERR_PTR(-ENOENT);
+ 
+@@ -351,12 +374,33 @@
+ 				  proc_fdinfo_instantiate);
+ }
+ 
++/*
++ * Check that the current task can access the fdinfo directory of the task
++ * it belongs to.
++ */
++static int proc_fdinfo_permission(struct inode *inode, int mask)
++{
++	int ret = proc_fdinfo_access_allowed(inode);
++
++	if (ret)
++		return ret;
++
++	return generic_permission(inode, mask);
++}
++
+ const struct inode_operations proc_fdinfo_inode_operations = {
+ 	.lookup		= proc_lookupfdinfo,
++	.permission	= proc_fdinfo_permission,
+ 	.setattr	= proc_setattr,
+ };
+ 
++static int proc_open_fdinfo(struct inode *inode, struct file *file)
++{
++	return proc_fdinfo_access_allowed(inode);
++}
++
+ const struct file_operations proc_fdinfo_operations = {
++	.open		= proc_open_fdinfo,
+ 	.read		= generic_read_dir,
+ 	.iterate_shared	= proc_readfdinfo,
+ 	.llseek		= generic_file_llseek,
