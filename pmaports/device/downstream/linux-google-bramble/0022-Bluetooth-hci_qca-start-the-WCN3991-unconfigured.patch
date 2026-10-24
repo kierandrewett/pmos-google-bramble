@@ -1,0 +1,40 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] Bluetooth: hci_qca: start the WCN3991 unconfigured
+
+The WCN3991 takes its Bluetooth address from the NVM file, which holds a
+fixed default (39:98:00:00:5A:AD on bramble), so every phone uses the
+same public address. On Android the Bluetooth HAL sets the phone's own
+address.
+
+Setting a unique one from userspace (bootmac, through mgmt Set Public
+Address) raced with the start-up: right after setup the controller is
+up with HCI_AUTO_OFF, which mgmt counts as not powered, so the request
+was accepted; it removed the mgmt index and queued a power on that
+failed with -EALREADY, and hci_power_on() then returned without adding
+the index back. Bluetooth was gone until the next boot.
+
+Set HCI_QUIRK_INVALID_BDADDR for the WCN399x in qca_setup(), as mainline
+does for these controllers (there through HCI_QUIRK_USE_BDADDR_PROPERTY
+and an invalid-address check). The controller then registers
+unconfigured and closed; Set Public Address configures it, and the
+power on writes the address with set_bdaddr before first use. Without a
+userspace step that sets an address, the controller stays unconfigured.
+
+---
+--- a/drivers/bluetooth/hci_qca.c
++++ b/drivers/bluetooth/hci_qca.c
+@@ -1166,6 +1166,14 @@ static int qca_setup(struct hci_uart *hu)
+ 		ret = qca_read_soc_version(hdev, &soc_ver);
+ 		if (ret)
+ 			return ret;
++
++		/* The NVM file sets a fixed address (39:98:00:00:5A:AD on
++		 * bramble), the same on every phone; on Android the HAL sets
++		 * the real one. Start the controller unconfigured, so that
++		 * userspace (bootmac) sets a unique public address through
++		 * set_bdaddr before it is used.
++		 */
++		set_bit(HCI_QUIRK_INVALID_BDADDR, &hdev->quirks);
+ 	} else {
+ 		bt_dev_info(hdev, "ROME setup");
+ 		qca_set_speed(hu, QCA_INIT_SPEED);
