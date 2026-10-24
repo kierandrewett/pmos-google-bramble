@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=22
+pkgrel=23
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -32,6 +32,7 @@ makedepends="
 	gcc
 	"
 install="$pkgname.post-install $pkgname.post-upgrade"
+subpackages="$pkgname-pipewire:pipewire_config"
 source="
 	deviceinfo
 	modules-initfs
@@ -55,6 +56,7 @@ source="
 	10-bramble-env.conf
 	bramble-environment.conf
 	wireplumber-bramble.conf
+	pipewire-bramble-speaker.conf
 	"
 options="!archcheck !check"
 
@@ -95,11 +97,6 @@ package() {
 	ln -s ../../Google/bramble/sm7250-bolero-snd-card.conf \
 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/sm7250-bolero-s/sm7250-bolero-snd-card.conf
 
-	# WirePlumber (PipeWire audio backend): no compress-offload device and
-	# no camera monitors, see the file.
-	install -Dm644 "$srcdir"/wireplumber-bramble.conf \
-		"$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/51-bramble.conf
-
 	# Global environment profile
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/etc/profile.d/bramble-display.sh
 	install -Dm755 "$srcdir"/bramble-display.sh "$pkgdir"/usr/share/tinydm/env-wayland.d/20-bramble.sh
@@ -115,6 +112,23 @@ package() {
 
 	# Interactive mobile GUI launcher
 	install -Dm755 "$srcdir"/start_gui.sh "$pkgdir"/usr/bin/start_gui.sh
+}
+
+pipewire_config() {
+	pkgdesc="Google Pixel 4a (5G): PipeWire and WirePlumber settings"
+	install_if="$pkgname=$pkgver-r$pkgrel pipewire"
+	depends="
+		lsp-plugins-ladspa
+		pipewire-filter-graph
+		pipewire-filter-graph-ladspa
+		"
+
+	# No compress-offload device and no camera monitors, see the file
+	install -Dm644 "$srcdir"/wireplumber-bramble.conf \
+		"$subpkgdir"/usr/share/wireplumber/wireplumber.conf.d/51-bramble.conf
+	# Speaker loudness filter (limiter), see the file
+	install -Dm644 "$srcdir"/pipewire-bramble-speaker.conf \
+		"$subpkgdir"/usr/share/pipewire/pipewire.conf.d/51-bramble-speaker.conf
 }
 sha512sums="
 1748b885c8d39bd8b0fc954fe1482e498ab800a981581609c2ce1293302f2aee5a1283c3dba9acc2420c1b560e49d8db0ea65b9da9c619e82f296e71d8fd34f6  deviceinfo
@@ -139,4 +153,5 @@ cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a863
 72792eddbb0b8317dce3147fccfb469525f241a4610f74970d71c04c2421c91d70e1d325f1e235671be3f7ed5e93796c6a258fa5415baf1f7a52e5e8c949c2a1  10-bramble-env.conf
 470c4dae7b47d79bf78c85a8a1e1e23e7c428ca72018c956f416f861892ec9c3178b55f3911da500fab098310154c6083316ab56deeedf5b22cfd347965d053d  bramble-environment.conf
 89ae0da627647fbb716f4a52577904cd8acab8515fde7a23e64e529e053099e90468a496aaf999f0760ea0e2920e39a082476ef79e551baf7d57b7c153af9d95  wireplumber-bramble.conf
+d48a56a694b75c7008f54c7e6cfb12e292637a83753b6ed0069ebdfce57ce35f1c97a2f4545e2ea8b73f1b3edb9d511116e67915a26663eebabe3d6b4a2720ed  pipewire-bramble-speaker.conf
 "
