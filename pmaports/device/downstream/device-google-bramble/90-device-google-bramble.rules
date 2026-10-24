@@ -12,7 +12,8 @@ KERNEL=="ion", MODE="0660", GROUP="video"
 # ignores devices without it, so tag it for feedbackd here.
 SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="drv2624-haptics", ENV{ID_INPUT}="1", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
 
-# Double tap to wake: kernel patch 0009 keeps the touchscreen sensing while
-# the screen is off and reports a double tap as the power key. Off by default
-# in the driver; write 0 to the same attribute to turn it off again.
-ACTION=="add|bind", SUBSYSTEM=="spi", DRIVER=="fts", ATTR{double_tap_wake}="1"
+# Tap to wake: kernel patch 0009 keeps the touchscreen sensing while the
+# screen is off and reports a tap as the power key; patch 0021 lets a single
+# tap do it (tap_wake_taps, 1 or 2). Off by default in the driver; write 0
+# to double_tap_wake to turn it off again.
+ACTION=="add|bind", SUBSYSTEM=="spi", DRIVER=="fts", ATTR{tap_wake_taps}="1", ATTR{double_tap_wake}="1"
