@@ -6,7 +6,7 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=phoc
 _pkgver=0.58.0
 pkgver=9999$_pkgver
-pkgrel=0
+pkgrel=1
 pkgdesc="wlroots based Phone compositor for the Phosh shell"
 arch="all"
 url="https://gitlab.gnome.org/World/Phosh/phoc"
@@ -56,6 +56,7 @@ subpackages="
 options="!check" # Needs fullblown EGL
 source="https://sources.phosh.mobi/releases/phoc/phoc-$_pkgver.tar.xz
 	0001-output-fade-to-and-from-black-on-power-save.patch
+	0002-output-shield-drop-the-animation-before-the-rest-on-finalize.patch
 	"
 replaces="wlroots-phosh"
 builddir="$srcdir/$pkgname-$_pkgver"
@@ -109,4 +110,5 @@ schemas() {
 sha512sums="
 8abdf88f5e00c86ce3da54b24ff691cfe1a5cc7cb55bf725714d269473d4374815dfb857028abf0a0ecab6a33ca5c350598ae872eb1f220071493f743fa15dcc  phoc-0.58.0.tar.xz
 e080b08c9bff1ed79790b537a27e93012163af07ba17806e786de9909e6fea65596e25a4a8674bde3614cff5a06b56febbbd2852cc25f92858d430f2e957c171  0001-output-fade-to-and-from-black-on-power-save.patch
+6983edd42fc5991325bfbb896d94f2bc5edd1030f8d46bec9e376bc89e5a856db60b26c7107286ebd278111a800f861827efe9f7a85013db658a45861e7ef1fb  0002-output-shield-drop-the-animation-before-the-rest-on-finalize.patch
 "
