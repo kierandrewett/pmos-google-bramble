@@ -2,15 +2,17 @@
 // container on google-bramble and hands frames to the Linux side.
 //
 //   bramble-camera-ndk list
-//   bramble-camera-ndk still  <camera-id> <out.jpg> [zoom]
-//   bramble-camera-ndk stream <camera-id> <width> <height> <socket> [zoom]
+//   bramble-camera-ndk still <camera-id> <out.jpg> [zoom]
+//   bramble-camera-ndk serve <socket>
 //
-// "still" writes one full-resolution JPEG. "stream" listens on a Unix
-// socket and, for each client, sends frames as a 16-byte header
-// ("BRCF", width, height, payload size; little endian u32) followed by
-// NV12 data. zoom is ACAMERA_CONTROL_ZOOM_RATIO: on the logical rear
-// camera values below 1.0 switch to the ultrawide sensor; a negative value
-// picks the widest zoom available. Without zoom the HAL default is used.
+// "still" writes one full-resolution JPEG. "serve" listens on a Unix socket
+// and opens a camera only while a client is connected. The client sends one
+// request line, "<camera-id> <width> <height> <zoom>\n", and then receives
+// frames: a 16-byte header ("BRCF", width, height, payload size; little
+// endian u32) followed by NV12 data. Closing the connection closes the
+// camera. zoom is ACAMERA_CONTROL_ZOOM_RATIO: on the logical rear camera
+// values below 1.0 switch to the ultrawide sensor, a negative value picks
+// the widest zoom available and 0 keeps the HAL default.
 
 #include <camera/NdkCameraCaptureSession.h>
 #include <camera/NdkCameraDevice.h>
@@ -36,6 +38,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <poll.h>
 #include <dlfcn.h>
 #include <unistd.h>
 
@@ -105,9 +108,17 @@ int listCameras() {
             for (size_t j = 0; j < n; j++)
                 phys += std::string(j ? "," : "") + physIds[j];
         Size jpeg = largestSize(mgr, id, AIMAGE_FORMAT_JPEG);
-        Size yuv = largestSize(mgr, id, AIMAGE_FORMAT_YUV_420_888);
-        printf("id=%s facing=%s jpeg=%dx%d yuv=%dx%d zoom=%.2f-%.2f physical=[%s]\n", id, facing,
-               jpeg.w, jpeg.h, yuv.w, yuv.h, zmin, zmax, phys.c_str());
+        int orientation = 0;
+        if (ACameraMetadata_getConstEntry(chars, ACAMERA_SENSOR_ORIENTATION, &e) == ACAMERA_OK)
+            orientation = e.data.i32[0];
+        std::string yuv;
+        if (ACameraMetadata_getConstEntry(chars, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &e) == ACAMERA_OK)
+            for (uint32_t k = 0; k + 3 < e.count; k += 4)
+                if (e.data.i32[k] == AIMAGE_FORMAT_YUV_420_888 && !e.data.i32[k + 3])
+                    yuv += (yuv.empty() ? "" : ",") + std::to_string(e.data.i32[k + 1]) + "x" +
+                           std::to_string(e.data.i32[k + 2]);
+        printf("id=%s facing=%s orientation=%d jpeg=%dx%d zoom=%.2f-%.2f physical=[%s] yuv=%s\n", id,
+               facing, orientation, jpeg.w, jpeg.h, zmin, zmax, phys.c_str(), yuv.c_str());
         ACameraMetadata_free(chars);
     }
     ACameraManager_deleteCameraIdList(ids);
@@ -266,6 +277,11 @@ bool sendAll(int fd, const void *buf, size_t len) {
     return true;
 }
 
+// Frame callback (image reader thread): convert to NV12 and send it to the
+// current client. A failed send marks the client as gone; the serve loop
+// then closes the camera.
+std::atomic<bool> gClientGone{false};
+
 void onImage(void *, AImageReader *reader) {
     AImage *img = nullptr;
     if (AImageReader_acquireLatestImage(reader, &img) != AMEDIA_OK || !img)
@@ -274,7 +290,6 @@ void onImage(void *, AImageReader *reader) {
     AImage_getWidth(img, &w);
     AImage_getHeight(img, &h);
     std::vector<uint8_t> frame(size_t(w) * h * 3 / 2);
-    // Y plane
     uint8_t *y = nullptr, *u = nullptr, *v = nullptr;
     int yl = 0, ul = 0, vl = 0, ys = 0, us = 0, ups = 0;
     AImage_getPlaneData(img, 0, &y, &yl);
@@ -286,58 +301,107 @@ void onImage(void *, AImageReader *reader) {
     for (int r = 0; r < h; r++)
         memcpy(&frame[size_t(r) * w], y + size_t(r) * ys, size_t(w));
     uint8_t *uv = &frame[size_t(w) * h];
-    for (int r = 0; r < h / 2; r++)
-        for (int c = 0; c < w / 2; c++) {
-            uv[size_t(r) * w + 2 * c] = u[size_t(r) * us + size_t(c) * ups];
-            uv[size_t(r) * w + 2 * c + 1] = v[size_t(r) * us + size_t(c) * ups];
-        }
+    if (ups == 2 && v == u + 1) {
+        // Already semi-planar UVUV (NV12): copy rows.
+        for (int r = 0; r < h / 2; r++)
+            memcpy(uv + size_t(r) * w, u + size_t(r) * us, size_t(w));
+    } else {
+        for (int r = 0; r < h / 2; r++)
+            for (int c = 0; c < w / 2; c++) {
+                uv[size_t(r) * w + 2 * c] = u[size_t(r) * us + size_t(c) * ups];
+                uv[size_t(r) * w + 2 * c + 1] = v[size_t(r) * us + size_t(c) * ups];
+            }
+    }
     AImage_delete(img);
 
     std::lock_guard<std::mutex> l(gClientLock);
-    if (gClient < 0)
+    if (gClient < 0 || gClientGone)
         return;
     uint32_t hdr[4] = {0x46435242 /* "BRCF" */, uint32_t(w), uint32_t(h), uint32_t(frame.size())};
-    if (!sendAll(gClient, hdr, sizeof(hdr)) || !sendAll(gClient, frame.data(), frame.size())) {
-        close(gClient);
-        gClient = -1;
-        LOG("client gone");
-    }
+    if (!sendAll(gClient, hdr, sizeof(hdr)) || !sendAll(gClient, frame.data(), frame.size()))
+        gClientGone = true;
 }
 
-int stream(const char *id, int w, int h, const char *sock, float zoom) {
+// Read the request line: "<camera-id> <width> <height> <zoom>".
+bool readRequest(int fd, std::string &id, int &w, int &h, float &zoom) {
+    char line[128];
+    size_t n = 0;
+    while (n + 1 < sizeof(line)) {
+        ssize_t r = recv(fd, line + n, 1, 0);
+        if (r <= 0)
+            return false;
+        if (line[n] == '\n')
+            break;
+        n++;
+    }
+    line[n] = 0;
+    char cam[32];
+    if (sscanf(line, "%31s %d %d %f", cam, &w, &h, &zoom) != 4 || w <= 0 || h <= 0)
+        return false;
+    id = cam;
+    return true;
+}
+
+// Serve one client: open the camera it asks for, stream until it goes
+// away, then close the camera.
+void serveClient(int c) {
+    std::string id;
+    int w = 0, h = 0;
+    float zoom = 0;
+    if (!readRequest(c, id, w, h, zoom)) {
+        LOG("bad request");
+        close(c);
+        return;
+    }
     {
         ACameraManager *probe = ACameraManager_create();
-        zoom = resolveZoom(probe, id, zoom);
+        zoom = resolveZoom(probe, id.c_str(), zoom);
         ACameraManager_delete(probe);
     }
+    LOG("client wants camera %s %dx%d zoom %.2f", id.c_str(), w, h, zoom);
+    {
+        std::lock_guard<std::mutex> l(gClientLock);
+        gClient = c;
+        gClientGone = false;
+    }
+    {
+        AImageReader_ImageListener listener{nullptr, onImage};
+        Capture cap;
+        if (cap.open(id.c_str(), w, h, AIMAGE_FORMAT_YUV_420_888, 4, TEMPLATE_PREVIEW, zoom, &listener) &&
+            check(ACameraCaptureSession_setRepeatingRequest(cap.session, nullptr, 1, &cap.request, nullptr),
+                  "setRepeatingRequest")) {
+            // The client sends nothing after the request: readable means
+            // it closed the connection.
+            while (!gClientGone && !gStop) {
+                pollfd p{c, POLLIN, 0};
+                if (poll(&p, 1, 200) > 0)
+                    break;
+            }
+        }
+        std::lock_guard<std::mutex> l(gClientLock);
+        gClient = -1;
+    }
+    close(c);
+    LOG("camera %s closed", id.c_str());
+}
+
+int serve(const char *sock) {
     int srv = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", sock);
     unlink(sock);
-    if (bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) || listen(srv, 1)) {
+    if (bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) || listen(srv, 4)) {
         LOG("cannot listen on %s: %s", sock, strerror(errno));
         return 1;
     }
+    // Access is controlled by the directory the socket lives in.
     chmod(sock, 0666);
-
-    AImageReader_ImageListener listener{nullptr, onImage};
-    Capture cap;
-    if (!cap.open(id, w, h, AIMAGE_FORMAT_YUV_420_888, 4, TEMPLATE_PREVIEW, zoom, &listener))
-        return 1;
-    if (!check(ACameraCaptureSession_setRepeatingRequest(cap.session, nullptr, 1, &cap.request, nullptr),
-               "setRepeatingRequest"))
-        return 1;
-    LOG("streaming camera %s %dx%d on %s", id, w, h, sock);
+    LOG("serving cameras on %s", sock);
     while (!gStop) {
         int c = accept4(srv, nullptr, nullptr, SOCK_CLOEXEC);
-        if (c < 0)
-            continue;
-        std::lock_guard<std::mutex> l(gClientLock);
-        if (gClient >= 0)
-            close(gClient);
-        gClient = c;
-        LOG("client connected");
+        if (c >= 0)
+            serveClient(c);
     }
     close(srv);
     return 0;
@@ -370,8 +434,8 @@ int main(int argc, char **argv) {
         return listCameras();
     if (argc >= 4 && !strcmp(argv[1], "still"))
         return still(argv[2], argv[3], argc >= 5 ? strtof(argv[4], nullptr) : 0.0f);
-    if (argc >= 6 && !strcmp(argv[1], "stream"))
-        return stream(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5], argc >= 7 ? strtof(argv[6], nullptr) : 0);
-    fprintf(stderr, "usage: %s list | still <id> <out.jpg> [zoom] | stream <id> <w> <h> <socket> [zoom]\n", argv[0]);
+    if (argc >= 3 && !strcmp(argv[1], "serve"))
+        return serve(argv[2]);
+    fprintf(stderr, "usage: %s list | still <id> <out.jpg> [zoom] | serve <socket>\n", argv[0]);
     return 2;
 }

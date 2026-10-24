@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pixel 4a (5G) cameras for PipeWire
+Comment=Offer the cameras of the Android HAL container to camera apps
+Exec=/usr/libexec/bramble-camera-pipewire
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications
+X-GNOME-AutoRestart=true

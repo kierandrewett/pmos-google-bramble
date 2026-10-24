@@ -175,6 +175,12 @@ setup_namespace() {
 	mount --bind $PERSIST $ROOT/mnt/vendor/persist
 	mount -o remount,bind,ro $ROOT/mnt/vendor/persist
 	mount --bind $STATE/data $ROOT/data
+	# Camera frame socket (bramble-camera-ndk serve), reachable from the
+	# host for members of the video group only.
+	mkdir -p $RUN/camera $ROOT/mnt/bramble-camera
+	chown root:video $RUN/camera
+	chmod 0750 $RUN/camera
+	mount --bind $RUN/camera $ROOT/mnt/bramble-camera
 	# The kernel loads firmware (CAMERA_ICP.elf, the FPC trusted app)
 	# relative to the root of the requesting process.
 	mkdir -p $ROOT/run/msm-firmware-loader
