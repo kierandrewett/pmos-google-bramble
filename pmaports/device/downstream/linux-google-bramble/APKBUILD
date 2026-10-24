@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=23
+pkgrel=24
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -51,6 +51,7 @@ source="
 	0014-msm-ipa3-size-QMAPv5-frames-on-the-WAN-consumer-pipe.patch
 	0015-net-rmnet-use-the-mainline-values-for-the-MAPv5-flags.patch
 	0016-net-rmnet-fix-NULL-pointer-dereference-in-rmnet_changelink.patch
+	0017-Bluetooth-btqca-parse-NVM-files-with-an-enclosing-header.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -120,4 +121,5 @@ df23ee834bb38a529bdfe967a848202eb396bdbd28dd794f3665cb9c515559698505187070899711
 94dac8b07684ff196675c9b48e4a7925e36c8c6f5f551da21db9b0b817f25badcecdfed21113f8f774f86cf026f902d0cab4ad4751dbc7b66b0648b28d007b44  0014-msm-ipa3-size-QMAPv5-frames-on-the-WAN-consumer-pipe.patch
 430bdd6db2e21cbd66adeea915108b1bf5645870c79c483576e20ddd9d716116f92e2c402259eafe7753941fdac1da2f55a86507d3d2e0bf96880e25bee2e2b0  0015-net-rmnet-use-the-mainline-values-for-the-MAPv5-flags.patch
 cd135efcbd557249efb4e07e5f1a5408cabccf00b0848a422b61471a180ac2a8fb01bfb6b257cb002f328107ec091760add0f70e78eaf8e66c28e59976b54173  0016-net-rmnet-fix-NULL-pointer-dereference-in-rmnet_changelink.patch
+c8a725eb9089b41d11ab0bc9a4f5481d11fe9bda18b20a7d212b8c02dac0806ffceeb013b4c96c56266eb99cdb12322513590ce3f1445935780de70746903d19  0017-Bluetooth-btqca-parse-NVM-files-with-an-enclosing-header.patch
 "

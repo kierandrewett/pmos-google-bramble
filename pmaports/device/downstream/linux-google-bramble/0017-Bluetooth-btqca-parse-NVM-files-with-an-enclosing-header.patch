@@ -1,0 +1,35 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] Bluetooth: btqca: parse NVM files with an enclosing header
+
+The WCN3991 NVM file in this phone (qca/crnv32u.bin) starts with a TLV
+header of type 4 that encloses a second header of type 2, which holds
+the tags. The NVM parser assumed the tags start right after the first
+header, walked garbage and never found the HCI tag, so the in-band
+sleep bit and the UART baud rate were never set. The file's default
+rate is 3.2 Mbaud while the host runs at 3 Mbaud, so after the NVM
+download the controller switched speed, the host read garbage ("Frame
+reassembly failed (-84)") and HCI_RESET timed out.
+
+Step into the inner header when the outer one has type 4, as mainline
+does ("Bluetooth: qca: fix NVM configuration parsing").
+
+---
+--- a/drivers/bluetooth/btqca.c	2026-10-23 23:58:35.121443556 +0100
++++ b/drivers/bluetooth/btqca.c	2026-10-23 23:58:35.136397751 +0100
+@@ -181,6 +181,16 @@
+ 		break;
+ 
+ 	case TLV_TYPE_NVM:
++		/* Some NVM files, such as the WCN3991 crnv32u.bin, wrap the
++		 * tags in an enclosing header of type 4, with the tags behind
++		 * a second header of type 2. Parse that set, as mainline does.
++		 */
++		if ((type_len & 0xff) == 4 && length >= sizeof(*tlv)) {
++			tlv++;
++			type_len = le32_to_cpu(tlv->type_len);
++			length = (type_len >> 8) & 0x00ffffff;
++		}
++
+ 		idx = 0;
+ 		data = tlv->data;
+ 		while (idx < length) {
