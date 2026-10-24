@@ -1,0 +1,103 @@
+# Forked from Alpine to fade the screen to and from black on power save
+# (power button), like other phone platforms. Upstream:
+# https://gitlab.gnome.org/World/Phosh/phoc
+# Keep the version in step with phosh from Alpine.
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=phoc
+_pkgver=0.57.0
+pkgver=9999$_pkgver
+pkgrel=0
+pkgdesc="wlroots based Phone compositor for the Phosh shell"
+arch="all"
+url="https://gitlab.gnome.org/World/Phosh/phoc"
+license="GPL-3.0-only"
+depends="
+	$pkgname-schemas
+	dbus
+	gsettings-desktop-schemas
+	mutter-schemas
+	"
+_wlrootsmakedepends="
+	eudev-dev
+	glslang
+	hwdata-dev
+	libcap-dev
+	libdisplay-info-dev
+	libseat-dev
+	libxcb-dev
+	xcb-util-image-dev
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xkeyboard-config-dev
+	xwayland-dev
+	"
+makedepends="
+	glib-dev
+	gmobile-dev
+	gnome-desktop-dev
+	json-glib-dev
+	libdrm-dev
+	libinput-dev
+	libxkbcommon-dev
+	mesa-dev
+	meson
+	pixman-dev
+	py3-docutils
+	wayland-dev
+	wayland-protocols
+	$_wlrootsmakedepends
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-schemas::noarch
+	"
+options="!check" # Needs fullblown EGL
+source="https://sources.phosh.mobi/releases/phoc/phoc-$_pkgver.tar.xz
+	0001-output-fade-to-and-from-black-on-power-save.patch
+	"
+replaces="wlroots-phosh"
+builddir="$srcdir/$pkgname-$_pkgver"
+
+prepare() {
+	default_prepare
+
+	# keep in sync with diff_files in subprojects/wlroots.wrap
+	patch -Np1 < subprojects/packagefiles/wlroots/0001-Revert-layer-shell-error-on-0-dimension-without-anch.patch \
+		-d subprojects/wlroots-0.20.x
+}
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dembed-wlroots=enabled \
+		-Dman=true \
+		-Dtests=false \
+		--default-library=static \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir/" meson install --no-rebuild -C output
+	install -Dm755 tools/scale-to-fit \
+		-t "$pkgdir"/usr/bin
+
+	# remove unneeded wlroots dev. files
+	rm -r "$pkgdir"/usr/include
+	rm -r "$pkgdir"/usr/lib/libwlroots-*.a
+	rm -r "$pkgdir"/usr/lib/pkgconfig
+}
+
+schemas() {
+	pkgdesc="$pkgdesc (schemas)"
+	depends=
+
+	amove usr/share/glib-2.0/schemas
+}
+
+sha512sums="
+c3dfb5e951422ccedcc1740b788a4c9dbc517ec7c0901967298a77dc5a35b4ca4556fe97b02085868779adddb1b86539224f2c3c6277ff5264315ada54b322a3  phoc-0.57.0.tar.xz
+e080b08c9bff1ed79790b537a27e93012163af07ba17806e786de9909e6fea65596e25a4a8674bde3614cff5a06b56febbbd2852cc25f92858d430f2e957c171  0001-output-fade-to-and-from-black-on-power-save.patch
+"

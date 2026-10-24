@@ -1,0 +1,265 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] output: fade to and from black on power save
+
+Turning an output off or on through wlr-output-power-management happens
+in one step, so the screen goes black or lights up instantly when the
+power button is pressed, unlike the fade other phone platforms use.
+
+Reuse the output shield for this: on power off, fade the shield in to
+opaque black over 250 ms and only disable the output when the fade is
+done; on power on, raise the shield before the first frame and fade it
+out. A power on during the fade out cancels it and fades back in.
+
+The shield gains phoc_output_shield_fade_in() (transparent to opaque,
+with a completion callback) and phoc_output_shield_cancel_fade_in().
+
+---
+--- a/src/output-shield.h	2026-10-24 01:23:12.559735458 +0100
++++ b/src/output-shield.h	2026-10-24 01:24:32.583996007 +0100
+@@ -27,4 +27,8 @@
+ void                phoc_output_shield_set_duration              (PhocOutputShield *self,
+                                                                   guint             duration);
+ gboolean            phoc_output_shield_is_raised                 (PhocOutputShield *self);
++void                phoc_output_shield_fade_in                   (PhocOutputShield *self,
++                                                                  GFunc             done,
++                                                                  gpointer          data);
++void                phoc_output_shield_cancel_fade_in            (PhocOutputShield *self);
+ G_END_DECLS
+--- a/src/output-shield.c	2026-10-24 01:23:12.559761768 +0100
++++ b/src/output-shield.c	2026-10-24 01:24:32.583579253 +0100
+@@ -45,6 +45,11 @@
+   PhocPropertyEaser  *easer;
+ 
+   gulong              render_end_id;
++
++  /* Set while fading in (towards opaque) via phoc_output_shield_fade_in() */
++  gboolean            fading_in;
++  GFunc               fade_in_done;
++  gpointer            fade_in_data;
+ };
+ 
+ static void phoc_output_shield_animatable_interface_init (PhocAnimatableInterface *iface);
+@@ -194,10 +199,35 @@
+ 
+ 
+ static void
++set_fade_direction (PhocOutputShield *self, gboolean in)
++{
++  phoc_property_easer_set_props (self->easer,
++                                 "alpha", in ? 0.0 : 1.0, in ? 1.0 : 0.0,
++                                 NULL);
++}
++
++
++static void
+ on_animation_done (PhocOutputShield *self)
+ {
+-  /* We can unhook from the render loop once the shield is lowered completely */
+-  stop_render (self);
++  GFunc done;
++  gpointer data;
++
++  if (!self->fading_in) {
++    /* We can unhook from the render loop once the shield is lowered completely */
++    stop_render (self);
++    return;
++  }
++
++  /* Faded in: keep the shield up and tell the caller */
++  self->fading_in = FALSE;
++  set_fade_direction (self, FALSE);
++  done = self->fade_in_done;
++  data = self->fade_in_data;
++  self->fade_in_done = NULL;
++  self->fade_in_data = NULL;
++  if (done)
++    done (self, data);
+ }
+ 
+ 
+@@ -308,6 +338,7 @@
+ {
+   g_return_if_fail (PHOC_IS_OUTPUT_SHIELD (self));
+ 
++  phoc_output_shield_cancel_fade_in (self);
+   phoc_timed_animation_skip (self->animation);
+ 
+   phoc_color_rect_set_alpha (self->color_rect, 1.0f);
+@@ -326,6 +357,7 @@
+ {
+   g_return_if_fail (PHOC_IS_OUTPUT_SHIELD (self));
+ 
++  phoc_output_shield_cancel_fade_in (self);
+   start_render (self, false);
+   phoc_timed_animation_play (self->animation);
+   g_clear_object (&self->spinner);
+@@ -366,3 +398,53 @@
+ 
+   return G_APPROX_VALUE (phoc_color_rect_get_alpha (self->color_rect), 1.0, FLT_EPSILON);
+ }
++
++
++/**
++ * phoc_output_shield_fade_in:
++ * @self: The shield
++ * @done: Called once the shield is fully raised
++ * @data: Data for @done
++ *
++ * Fade the shield in from transparent to opaque using the current
++ * easing and duration, then call @done. The shield stays raised.
++ */
++void
++phoc_output_shield_fade_in (PhocOutputShield *self, GFunc done, gpointer data)
++{
++  g_return_if_fail (PHOC_IS_OUTPUT_SHIELD (self));
++
++  phoc_output_shield_cancel_fade_in (self);
++  phoc_timed_animation_skip (self->animation);
++
++  self->fading_in = TRUE;
++  self->fade_in_done = done;
++  self->fade_in_data = data;
++  set_fade_direction (self, TRUE);
++  phoc_color_rect_set_alpha (self->color_rect, 0.0f);
++  start_render (self, FALSE);
++  phoc_timed_animation_play (self->animation);
++}
++
++/**
++ * phoc_output_shield_cancel_fade_in:
++ * @self: The shield
++ *
++ * Stop a fade started by phoc_output_shield_fade_in() without calling its
++ * callback. The shield keeps its current opacity.
++ */
++void
++phoc_output_shield_cancel_fade_in (PhocOutputShield *self)
++{
++  g_return_if_fail (PHOC_IS_OUTPUT_SHIELD (self));
++
++  if (!self->fading_in)
++    return;
++
++  self->fading_in = FALSE;
++  self->fade_in_done = NULL;
++  self->fade_in_data = NULL;
++  /* Skipping completes the animation; with fading_in cleared it unhooks */
++  phoc_timed_animation_skip (self->animation);
++  set_fade_direction (self, FALSE);
++}
+--- a/src/output.c	2026-10-24 01:23:12.559666717 +0100
++++ b/src/output.c	2026-10-24 01:25:30.078492928 +0100
+@@ -74,6 +74,7 @@
+ 
+   PhocLayoutTransaction *transaction;
+   gboolean modeset_shield;
++  gboolean power_off_pending;
+ 
+   GSList  *blings;          /* (element-type: PhocBling) */
+   GSList  *debug_damage;    /* (element-type: PhocDebugDamageRegion) */
+@@ -2078,11 +2079,46 @@
+ }
+ 
+ 
++#define PHOC_POWER_FADE_MS 250
++
++static gboolean
++commit_power_mode (PhocOutput *self, gboolean enable)
++{
++  struct wlr_output_state pending;
++
++  wlr_output_state_init (&pending);
++  wlr_output_state_set_enabled (&pending, enable);
++
++  if (!wlr_output_commit_state (self->wlr_output, &pending)) {
++    g_warning ("Failed to commit power mode change to %d for %p", enable, self);
++    wlr_output_state_finish (&pending);
++    return FALSE;
++  }
++
++  wlr_output_state_finish (&pending);
++  return TRUE;
++}
++
++
++static void
++on_power_off_faded (PhocOutputShield *shield, gpointer data)
++{
++  PhocOutput *self = PHOC_OUTPUT (data);
++  PhocOutputPrivate *priv = phoc_output_get_instance_private (self);
++
++  if (!priv->power_off_pending)
++    return;
++
++  priv->power_off_pending = FALSE;
++  commit_power_mode (self, FALSE);
++}
++
++
+ void
+ phoc_output_handle_output_power_manager_set_mode (struct wl_listener *listener, void *data)
+ {
+   struct wlr_output_power_v1_set_mode_event *event = data;
+-  struct wlr_output_state pending;
++  PhocOutputPrivate *priv;
+   PhocOutput *self;
+   bool enable = true;
+   bool current;
+@@ -2090,6 +2126,7 @@
+   g_return_if_fail (event && event->output && event->output->data);
+ 
+   self = event->output->data;
++  priv = phoc_output_get_instance_private (self);
+   g_debug ("Request to set output power mode of %p to %d", self->wlr_output->name, event->mode);
+   switch (event->mode) {
+   case ZWLR_OUTPUT_POWER_V1_MODE_OFF:
+@@ -2104,21 +2141,40 @@
+   }
+ 
+   current = self->wlr_output->enabled;
++
++  if (enable && priv->power_off_pending) {
++    /* Power on while fading out: stop the fade and fade back in */
++    priv->power_off_pending = FALSE;
++    phoc_output_lower_shield (self, PHOC_EASING_EASE_OUT_CUBIC, PHOC_POWER_FADE_MS);
++    return;
++  }
++
+   if (enable == current)
+     return;
+ 
+-  wlr_output_state_init (&pending);
+-  wlr_output_state_set_enabled (&pending, enable);
+-
+-  if (!wlr_output_commit_state (self->wlr_output, &pending)) {
+-    g_warning ("Failed to commit power mode change to %d for %p", enable, self);
+-    wlr_output_state_finish (&pending);
++  if (!enable) {
++    if (priv->shield == NULL) {
++      commit_power_mode (self, FALSE);
++      return;
++    }
++    /* Fade to black first, turn the output off when the fade is done */
++    priv->power_off_pending = TRUE;
++    phoc_output_shield_set_easing (priv->shield, PHOC_EASING_EASE_IN_CUBIC);
++    phoc_output_shield_set_duration (priv->shield, PHOC_POWER_FADE_MS);
++    phoc_output_shield_fade_in (priv->shield, (GFunc) on_power_off_faded, self);
++    phoc_output_damage_whole (self);
+     return;
+   }
+ 
+-  wlr_output_state_finish (&pending);
+-  if (enable)
+-    phoc_output_damage_whole (self);
++  if (!commit_power_mode (self, TRUE))
++    return;
++
++  /* Start from black and fade the content in */
++  if (priv->shield) {
++    phoc_output_raise_shield (self, FALSE);
++    phoc_output_lower_shield (self, PHOC_EASING_EASE_OUT_CUBIC, PHOC_POWER_FADE_MS);
++  }
++  phoc_output_damage_whole (self);
+ }
+ 
+ /**
