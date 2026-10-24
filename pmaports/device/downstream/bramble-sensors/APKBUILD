@@ -1,0 +1,43 @@
+# Sensors (accelerometer, light, proximity) on the Pixel 4a (5G): the Hexagon
+# FS service the sensors DSP needs, and a demo command that prints readings.
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=bramble-sensors
+pkgver=1
+pkgrel=0
+pkgdesc="Google Pixel 4a (5G): sensors DSP service and demo"
+url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
+arch="aarch64"
+license="MIT"
+depends="
+	hexagonrpcd>=99990.4.0
+	libssc
+	"
+install="$pkgname-openrc.post-install"
+subpackages="$pkgname-openrc"
+source="
+	bramble-sensors-demo
+	bramble-sensors.initd
+	"
+install_if="device-google-bramble"
+options="!check" # No test suite
+
+package() {
+	install -Dm755 "$srcdir"/bramble-sensors-demo "$pkgdir"/usr/bin/bramble-sensors-demo
+}
+
+openrc() {
+	pkgdesc="Google Pixel 4a (5G): sensors DSP OpenRC service"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	depends="
+		msm-firmware-loader
+		pd-mapper-openrc
+		qrtr-ns-openrc
+		"
+
+	install -Dm755 "$srcdir"/bramble-sensors.initd "$subpkgdir"/etc/init.d/bramble-sensors
+}
+
+sha512sums="
+b092ef545f29b12799b4e1f9dc6dd8881986fb1da0b418e6c9e15153ee0af495965576262c6484fe5167d4ff739150e3d171ceb50b6c9a3f0aff9b56683a0f51  bramble-sensors-demo
+011cca2d8341eb0283ed99e98da5951a4039bc12acf4ab7b73b7165aae7cd80bc363790b42e34431b3426f0dddd84a75f56443666cd4a582cae5ad9e8ff94ade  bramble-sensors.initd
+"

@@ -1,0 +1,46 @@
+#!/bin/sh
+# Print live accelerometer, light and proximity readings from the Pixel 4a
+# (5G) sensors DSP, once a second, using libssc's ssccli.
+#
+# The proximity sensor only reports when its state changes: it shows the last
+# reported FAR/NEAR state. Cover the top of the screen to see it flip.
+
+usage() {
+	echo "Usage: ${0##*/} [SECONDS]" >&2
+	echo "Print the latest sensor readings once a second for SECONDS (default 10)." >&2
+	exit 1
+}
+
+secs=${1:-10}
+case $secs in
+'' | *[!0-9]*) usage ;;
+esac
+[ "$secs" -gt 0 ] || usage
+
+if ! pidof hexagonrpcd >/dev/null; then
+	echo "hexagonrpcd is not running; start it with: rc-service bramble-sensors start" >&2
+	exit 1
+fi
+
+dir=$(mktemp -d) || exit 1
+trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$dir"' EXIT INT TERM
+
+# ssccli streams one line per sample until the timeout. Its stderr carries a
+# harmless mount matrix warning for the accelerometer, so keep it per sensor.
+for sensor in accelerometer light proximity; do
+	ssccli --timeout "$((secs + 1))" --sensor "$sensor" >"$dir/$sensor" 2>"$dir/$sensor.err" &
+done
+
+# Latest reading of a sensor without ssccli's "<Name> sensor measurement: ".
+latest() {
+	_v=$(tail -n 1 "$dir/$1" | sed 's/^[^:]*: //')
+	echo "${_v:-no data}"
+}
+
+i=0
+while [ "$i" -lt "$secs" ]; do
+	sleep 1
+	i=$((i + 1))
+	printf '%2ds  accelerometer: %s | light: %s | proximity: %s\n' "$i" \
+		"$(latest accelerometer)" "$(latest light)" "$(latest proximity)"
+done

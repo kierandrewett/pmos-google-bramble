@@ -1,0 +1,5 @@
+#!/bin/sh
+
+rc-update -q add bramble-sensors default
+
+exit 0

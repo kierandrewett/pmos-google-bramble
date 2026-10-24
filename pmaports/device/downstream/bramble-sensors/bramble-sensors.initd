@@ -1,0 +1,47 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): serve the files the sensors DSP (SSC, in the ADSP sensors
+# protection domain) asks for, so that libssc/ssccli can read the
+# accelerometer, light and proximity sensors.
+#
+# hexagonrpcd needs a root directory laid out like the vendor partition.
+# msm-firmware-loader already links most of it under
+# /run/msm-firmware-loader/hexagonrpc; this adds the sensors factory
+# calibration and registry version from the persist partition. Everything is
+# a symlink into the read-only mounts, no vendor blobs are copied.
+
+name="bramble-sensors"
+description="Hexagon FS daemon for the Pixel 4a (5G) sensors DSP"
+
+: "${bramble_sensors_root:=/run/bramble-sensors/root}"
+_fw=/run/msm-firmware-loader/hexagonrpc
+_persist=/run/msm-firmware-loader/mnt/persist-fastrpc/sensors/registry
+
+supervisor=supervise-daemon
+command=/usr/bin/hexagonrpcd
+# The downstream adsprpc node is root only, so this runs as root.
+command_args="-f /dev/adsprpc-smd-secure -d adsp -s -R $bramble_sensors_root"
+output_log="/var/log/bramble-sensors.log"
+error_log="/var/log/bramble-sensors.log"
+
+depend() {
+	need msm-firmware-loader bramble-dsp pd-mapper
+	use qrtr-ns
+}
+
+start_pre() {
+	rm -rf "$bramble_sensors_root"
+	mkdir -p "$bramble_sensors_root/sensors" || return 1
+	for _e in acdb dsp socinfo; do
+		ln -s "$_fw/$_e" "$bramble_sensors_root/$_e" || return 1
+	done
+	for _e in "$_fw"/sensors/*; do
+		ln -s "$_e" "$bramble_sensors_root/sensors/${_e##*/}" || return 1
+	done
+	for _e in factory_data sns_reg_version; do
+		ln -s "$_persist/$_e" "$bramble_sensors_root/sensors/$_e" || return 1
+	done
+}
+
+stop_post() {
+	rm -rf "$bramble_sensors_root"
+}
