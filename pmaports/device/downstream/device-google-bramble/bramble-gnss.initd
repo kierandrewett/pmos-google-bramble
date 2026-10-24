@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): undo the GNSS engine lock that ModemManager sets and give
+# the GNSS engine the time, so GPS works. See /usr/libexec/bramble-gnss.
+
+name="bramble-gnss"
+description="Set up the modem GNSS engine for ModemManager"
+
+command="/usr/libexec/bramble-gnss"
+command_background="yes"
+pidfile="/run/bramble-gnss.pid"
+
+depend() {
+	need dbus
+	after modemmanager
+}
