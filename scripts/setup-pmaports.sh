@@ -47,12 +47,20 @@ in_pkgdirs() {
 
 # Only files written by an earlier run of this script may differ from the
 # checkout, and only if nobody edited them since: they are replaced below.
+# A changed file that is identical to the one here is fine (for example an
+# APKBUILD after "pmbootstrap checksum", copied back to this repository).
 # Anything else is someone's work, so stop instead of overwriting it.
-if [ -e "$manifest" ] && ! sha256sum -c --quiet "$manifest" > /dev/null 2>&1; then
-	echo "[setup] files copied by an earlier run were changed in $target:" >&2
-	sha256sum -c --quiet "$manifest" 2>&1 | sed 's/^/  /' >&2
-	echo "[setup] make the change in $repo/pmaports instead, or commit/stash it" >&2
-	exit 1
+if [ -e "$manifest" ]; then
+	edited=$(sha256sum -c "$manifest" 2> /dev/null | sed -n 's/^\.\/\(.*\): FAILED.*/\1/p' |
+		while read -r p; do
+			cmp -s "$p" "$repo/pmaports/$p" 2> /dev/null || echo "$p"
+		done)
+	if [ -n "$edited" ]; then
+		echo "[setup] files copied by an earlier run were changed in $target:" >&2
+		echo "$edited" | sed 's/^/  /' >&2
+		echo "[setup] make the change in $repo/pmaports instead (copy it there if pmbootstrap made it), or commit/stash it" >&2
+		exit 1
+	fi
 fi
 others=$(git status --porcelain --untracked-files=all | cut -c4- | while read -r p; do
 	if in_pkgdirs "$p" && { [ ! -e "$p" ] || grep -qF "  ./$p" "$manifest" 2> /dev/null; }; then
