@@ -1,0 +1,86 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] input: fts_touch: allow waking on a single tap
+
+Add a tap_wake_taps sysfs switch next to double_tap_wake: 2 (the
+default) wakes on a double tap as before, 1 wakes on a single tap. The
+tap rules stay the same (one finger, at most 400 ms, at most 60 px of
+movement), so swipes and longer touches still do not wake the screen.
+
+---
+--- a/drivers/input/touchscreen/fts_touch/fts.h	2026-10-24 02:27:08.094370443 +0100
++++ b/drivers/input/touchscreen/fts_touch/fts.h	2026-10-24 02:27:25.690471963 +0100
+@@ -489,6 +489,7 @@
+ 	/* switches for features */
+ 	int gesture_enabled;	/* Gesture during suspend */
+ 	bool tap_wake_enabled;	/* double_tap_wake: wake on a double tap */
++	int tap_wake_taps;	/* tap_wake_taps: taps to wake, 0 means 2 */
+ 	bool tap_wake_armed;	/* screen off, still sensing for a double tap */
+ 	bool tap_wake_suspended; /* system suspend disabled the armed irq */
+ 	struct fts_tap_wake tap; /* double tap detector */
+--- a/drivers/input/touchscreen/fts_touch/fts.c	2026-10-24 02:27:08.094179770 +0100
++++ b/drivers/input/touchscreen/fts_touch/fts.c	2026-10-24 02:27:25.699825313 +0100
+@@ -2778,6 +2778,38 @@
+ }
+ 
+ static DEVICE_ATTR_RW(double_tap_wake);
++
++/* Number of taps that wake the screen: "echo 1 > tap_wake_taps" or 2 */
++static int fts_tap_wake_taps(struct fts_ts_info *info)
++{
++	int taps = READ_ONCE(info->tap_wake_taps);
++
++	return taps ? taps : 2;
++}
++
++static ssize_t tap_wake_taps_show(struct device *dev,
++				  struct device_attribute *attr, char *buf)
++{
++	struct fts_ts_info *info = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", fts_tap_wake_taps(info));
++}
++
++static ssize_t tap_wake_taps_store(struct device *dev,
++				   struct device_attribute *attr,
++				   const char *buf, size_t count)
++{
++	struct fts_ts_info *info = dev_get_drvdata(dev);
++	int taps;
++
++	if (kstrtoint(buf, 0, &taps) || taps < 1 || taps > 2)
++		return -EINVAL;
++
++	WRITE_ONCE(info->tap_wake_taps, taps);
++	return count;
++}
++
++static DEVICE_ATTR_RW(tap_wake_taps);
+ static DEVICE_ATTR_RO(infoblock_getdata);
+ static DEVICE_ATTR_RW(fwupdate);
+ static DEVICE_ATTR_RO(appid);
+@@ -2877,6 +2909,7 @@
+ 	&dev_attr_audio_status.attr,
+ #endif
+ 	&dev_attr_double_tap_wake.attr,
++	&dev_attr_tap_wake_taps.attr,
+ 	NULL,
+ };
+ 
+@@ -4457,7 +4490,7 @@
+ 			break;
+ 		}
+ 
+-		if (++tap->taps == 1) {
++		if (++tap->taps < fts_tap_wake_taps(info)) {
+ 			tap->first_x = tap->x;
+ 			tap->first_y = tap->y;
+ 			tap->up_time = now;
+@@ -4465,7 +4498,7 @@
+ 		}
+ 
+ 		tap->taps = 0;
+-		pr_info("%s: double tap, waking the screen\n", __func__);
++		pr_info("%s: tap, waking the screen\n", __func__);
+ 		mutex_lock(&info->input_report_mutex);
+ 		input_report_key(info->input_dev, KEY_POWER, 1);
+ 		input_sync(info->input_dev);
