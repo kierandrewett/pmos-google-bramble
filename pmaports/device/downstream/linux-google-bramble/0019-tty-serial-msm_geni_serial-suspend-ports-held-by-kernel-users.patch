@@ -1,0 +1,107 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] tty: serial: msm_geni_serial: suspend ports held by kernel users
+
+With Bluetooth up through the in-kernel hci_qca driver, system suspend
+failed:
+
+  msm_geni_serial 894000.qcom,qup_uart:
+    msm_geni_serial_sys_suspend_noirq:Active userspace vote; ioctl_cnt 0
+  PM: Device 894000.qcom,qup_uart failed to suspend noirq: error -16
+
+On Android the Bluetooth HAL owns the port and votes its clocks on and
+off with the TIOCPMGET/TIOCPMPUT ioctls, so an idle port is runtime
+suspended. hci_qca opens the port through serdev and never makes these
+votes (its clock vote hooks are empty), so the port stays runtime
+active, holding its wakeup source, and suspend_noirq refuses.
+
+In the normal suspend phase, when the port has no userspace vote, force
+it into the runtime suspended state (RX stopped, resources off, wake-up
+interrupt on RX armed), which is the state an idle HAL leaves it in, and
+restore it on resume. Console ports and ports with a userspace vote keep
+the old behaviour.
+
+---
+--- a/drivers/tty/serial/msm_geni_serial.c	2026-10-24 02:11:11.661631854 +0100
++++ b/drivers/tty/serial/msm_geni_serial.c	2026-10-24 02:11:28.987879747 +0100
+@@ -227,6 +227,7 @@
+ 	void *ipc_log_irqstatus;
+ 	unsigned int cur_baud;
+ 	int ioctl_count;
++	bool forced_suspend;
+ 	bool manual_flow;
+ 	struct msm_geni_serial_ver_info ver_info;
+ 	u32 cur_tx_remaining;
+@@ -3882,6 +3883,47 @@
+ 	return ret;
+ }
+ 
++/*
++ * A kernel user of the port (hci_qca through serdev) keeps it open without
++ * the TIOCPMGET/TIOCPMPUT votes the Android Bluetooth HAL makes, so the port
++ * stays runtime active and system suspend fails with -EBUSY in
++ * suspend_noirq. Without a userspace vote, put the port into the state an
++ * idle HAL would leave it in (RX stopped, resources off, wake-up interrupt
++ * on RX armed) for system suspend, and restore it on resume.
++ */
++static int msm_geni_serial_sys_suspend(struct device *dev)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
++	struct uart_port *uport = &port->uport;
++	int ret;
++
++	port->forced_suspend = false;
++	if (uart_console(uport) || port->ioctl_count ||
++	    pm_runtime_status_suspended(dev))
++		return 0;
++
++	ret = pm_runtime_force_suspend(dev);
++	if (ret) {
++		dev_err(dev, "%s: force suspend failed %d\n", __func__, ret);
++		return ret;
++	}
++	port->forced_suspend = true;
++	return 0;
++}
++
++static int msm_geni_serial_sys_resume(struct device *dev)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
++
++	if (!port->forced_suspend)
++		return 0;
++
++	port->forced_suspend = false;
++	return pm_runtime_force_resume(dev);
++}
++
+ static int msm_geni_serial_sys_suspend_noirq(struct device *dev)
+ {
+ 	struct platform_device *pdev = to_platform_device(dev);
+@@ -3935,6 +3977,16 @@
+ 	return 0;
+ }
+ 
++static int msm_geni_serial_sys_suspend(struct device *dev)
++{
++	return 0;
++}
++
++static int msm_geni_serial_sys_resume(struct device *dev)
++{
++	return 0;
++}
++
+ static int msm_geni_serial_sys_suspend_noirq(struct device *dev)
+ {
+ 	return 0;
+@@ -3949,6 +4001,8 @@
+ static const struct dev_pm_ops msm_geni_serial_pm_ops = {
+ 	.runtime_suspend = msm_geni_serial_runtime_suspend,
+ 	.runtime_resume = msm_geni_serial_runtime_resume,
++	.suspend = msm_geni_serial_sys_suspend,
++	.resume = msm_geni_serial_sys_resume,
+ 	.suspend_noirq = msm_geni_serial_sys_suspend_noirq,
+ 	.resume_noirq = msm_geni_serial_sys_resume_noirq,
+ };
