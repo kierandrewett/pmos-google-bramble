@@ -1,0 +1,84 @@
+# google-bramble Android HAL container: changes to the Halium system image.
+
+# Services that are not needed here or that would act on the host (block
+# devices, Wi-Fi, USB, audio).
+service vold /system/bin/vold_BRAMBLE_DISABLED
+    disabled
+    override
+
+service wificond /system/bin/wificond_BRAMBLE_DISABLED
+    disabled
+    override
+
+service usbd /system/bin/usbd_BRAMBLE_DISABLED
+    disabled
+    oneshot
+    override
+
+service storaged /system/bin/storaged_BRAMBLE_DISABLED
+    disabled
+    override
+
+service miniaf /system/bin/miniafservice_BRAMBLE_DISABLED
+    disabled
+    override
+
+# gpuservice keeps exiting (there is no surfaceflinger here).
+service gpu /system/bin/gpuservice_BRAMBLE_DISABLED
+    disabled
+    override
+
+# The 32-bit self test from the conscrypt APEX cannot run here (exit 127)
+# and would shut the container down; skip both APEX self tests.
+service boringssl_self_test_apex32 /system/bin/true
+    override
+    stdio_to_kmsg
+    capabilities
+    user nobody
+
+service boringssl_self_test_apex64 /system/bin/true
+    override
+    stdio_to_kmsg
+    capabilities
+    user nobody
+
+# Activate APEXes one at a time: in parallel, threads race for the same
+# free loop device on this kernel and some fail with EBUSY.
+on early-init
+    setprop apexd.config.boot_activation.threads 1
+
+# init.rc starts class main on "nonencrypted", which vold triggers; vold is
+# off here, so start the classes once boot is done.
+on boot
+    class_start main
+    class_start late_start
+
+# The vendor vndservicemanager checks SELinux before every addService();
+# with SELinux active in the kernel but no policy loaded, every check fails.
+# Halium's no-op libselinux avoids that (as on the Ubuntu Touch Pixel 5
+# port).
+service vndservicemanager /vendor/bin/vndservicemanager /dev/vndbinder
+    override
+    setenv LD_PRELOAD libselinux_stubs.so
+    class core
+    user system
+    group system readproc
+    file /dev/kmsg w
+    onrestart class_restart main
+    onrestart class_restart hal
+    onrestart class_restart early_hal
+    shutdown critical
+
+# The FPC HAL opens the sensor's irq node in sysfs, which is root-only.
+service fps_hal /vendor/bin/hw/android.hardware.biometrics.fingerprint@2.2-service.fpc
+    override
+    class late_start
+    user root
+    group system input uhid
+
+# Stand-in for system_server's camera service proxy: without it
+# cameraserver treats the camera as disabled by device policy.
+service bramble_camera_proxy /system/bin/bramble-camera-proxy
+    class main
+    user system
+    group system camera

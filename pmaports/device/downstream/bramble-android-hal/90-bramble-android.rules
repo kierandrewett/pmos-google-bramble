@@ -1,0 +1,4 @@
+# Loop and dm devices of the Android HAL container (APEX images): keep
+# udisks2 from mounting them in the user session.
+KERNEL=="loop*", ATTR{loop/backing_file}=="*.apex", ENV{UDISKS_IGNORE}="1"
+ENV{DM_NAME}=="com.android.*", ENV{UDISKS_IGNORE}="1"

@@ -1,0 +1,72 @@
+# Maintainer: Kieran Drewett <kieran@drewett.dev>
+# Runs the phone's own Android vendor HALs (camera, fingerprint) in a
+# container with the Halium 14 system image, and provides bramble-camera
+# to take photos with all three cameras.
+#
+# bramble-camera-ndk and bramble-camera-proxy run inside the container
+# (bionic, Android 14). pmbootstrap has no Android NDK, so they are built
+# from tools/android-helpers/ in the pmos-google-bramble repository with
+# tools/android-helpers/build.sh and shipped prebuilt here.
+pkgname=bramble-android-hal
+pkgver=1
+pkgrel=0
+pkgdesc="Google Pixel 4a (5G): Android vendor HAL container and camera tool"
+url="https://github.com/kierandrewett/pmos-google-bramble"
+arch="aarch64"
+license="GPL-3.0-or-later"
+depends="
+	device-mapper
+	halium-gsi-34
+	setpriv
+	util-linux-misc
+	"
+install_if="device-google-bramble"
+options="!check !strip !tracedeps"
+subpackages="$pkgname-openrc"
+install="$pkgname-openrc.post-install"
+source="
+	90-bramble-android.rules
+	bramble-android.initd
+	bramble-android.sh
+	bramble-camera-ndk
+	bramble-camera-proxy
+	bramble-camera.sh
+	bramble.rc
+	init.bramble.rc
+	vendor-init.list
+	"
+
+package() {
+	install -Dm755 "$srcdir"/bramble-android.sh "$pkgdir"/usr/libexec/bramble-android
+	install -Dm755 "$srcdir"/bramble-camera.sh "$pkgdir"/usr/bin/bramble-camera
+	install -Dm755 "$srcdir"/bramble-android.initd "$pkgdir"/etc/init.d/bramble-android
+	install -Dm644 "$srcdir"/90-bramble-android.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/90-bramble-android.rules
+
+	local share="$pkgdir"/usr/share/bramble-android
+	install -Dm644 -t "$share" \
+		"$srcdir"/bramble.rc \
+		"$srcdir"/init.bramble.rc \
+		"$srcdir"/vendor-init.list
+	install -Dm755 -t "$share"/bin \
+		"$srcdir"/bramble-camera-ndk \
+		"$srcdir"/bramble-camera-proxy
+
+	install -dm700 "$pkgdir"/var/lib/bramble-android
+}
+
+openrc() {
+	default_openrc
+	install_if="openrc $pkgname=$pkgver-r$pkgrel"
+}
+sha512sums="
+97559a7e98cd18c662b4565580ef0613fcfd8233e46a6f0aa08ab815b1dd1b6859953d767c050c1a1ccdad10c859355acb39e2784b8c1344b7eeb34774299c25  90-bramble-android.rules
+4f0019c8e36fbb257dc49bee8250ce7b45c87b0cc355beec70384c3658395364b3227e60e972e92e1380013cf11f21aecb3ed1f8935634851800ad6d943bd695  bramble-android.initd
+c7202ef2e5af2cd00d4a901249d7d75287559bcafa8fbf471ec9fadd0b9065e8aa224d58b7eb485bfcf5023e3a72059fefdb7a5f242a64c2afad1494022c7943  bramble-android.sh
+ed48bb330ec3f30f572d1efae7bc5c2aaf44de6766ef1060ecfe2c5622c820ae8c162ebd854f99816f87ecf9a3c56888b563804f6ab15abf071c74e67e06d956  bramble-camera-ndk
+33991cb712f48f91c72865f13107a92242b6d54d71eef997c03ae655165e89dac2d91853fcaa24eb1564fc014a4b6cd1dea4893e08312c440dcb9f244edd9bf6  bramble-camera-proxy
+b5579fcae3d3a6094d8a02c7bed22f7abc7cf37665ca6ebb2bac53fcf83cce5ad191c2e887db5af5cbca93954b94778a2c85042687d13b9f04ccd7d067b6d8b0  bramble-camera.sh
+281972282f1c5151a11866694b6912da45a4111caef88763455c66484c8fad1a256e8da74b465ecdae18694c27ceca309344e900587bbff5fe8486383b4b7ca4  bramble.rc
+22d866077a059a67070b9fd7b397405dd33a91eaf4c40201b5d83146dace31c28a22b718c6a76d35d2c1d8a6ae0f42508abb7e46bfa99b78da4f51b7e88b1c83  init.bramble.rc
+889183b8e9f38ceb621e2aa292377b26bd421a805ba6b4a5121003503c68d89efa0ee796f75d4efcf9d785947893364b55273f9919d38716d6042d5686162622  vendor-init.list
+"

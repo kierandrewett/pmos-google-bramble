@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+
+name="Android HAL container"
+description="Android vendor HALs (camera, fingerprint) in a container"
+
+depend() {
+	need msm-firmware-loader localmount
+	after bramble-firmware
+}
+
+start() {
+	ebegin "Starting $name"
+	# CAMX modules that are not loaded automatically; the *_late modules
+	# create the V4L2 subdevice nodes.
+	for m in cam-sync cam-context cam_isp_hw_mgr cam_ife_hw_mgr cam_isp cam_hfi \
+		cam_icp cam_jpeg_hw_mgr cam_jpeg cam_fd cam_lrme cam_req_mgr_late cam_cci_late; do
+		modprobe -q "$m" || ewarn "could not load $m"
+	done
+	/usr/libexec/bramble-android start
+	eend $?
+}
+
+stop() {
+	ebegin "Stopping $name"
+	/usr/libexec/bramble-android stop
+	eend $?
+}
+
+status() {
+	/usr/libexec/bramble-android status
+}

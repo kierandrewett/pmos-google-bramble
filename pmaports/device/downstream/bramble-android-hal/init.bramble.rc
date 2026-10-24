@@ -1,0 +1,28 @@
+# google-bramble Android HAL container: replaces the stock init.bramble.rc
+# (and through it init.sm7250.rc), which also start the modem, Wi-Fi and
+# audio services that postmarketOS runs natively.
+
+on early-fs
+    # Trusted apps (keymaster, gatekeeper, fingerprint) go through qseecomd,
+    # as in the stock init.sm7250.rc.
+    start vendor.qseecomd
+
+on post-fs-data
+    mkdir /data/vendor 0771 root root
+    mkdir /data/vendor/camera 0770 system camera
+    mkdir /data/vendor_de 0771 system system
+    mkdir /data/vendor_ce 0771 system system
+    mkdir /data/vendor_de/0 0770 system system
+    mkdir /data/vendor_de/0/fpdata 0700 system system
+    mkdir /data/vendor/fingerprint 0770 system system
+
+# keymaster and gatekeeper only work once qseecomd has registered its
+# listeners (RPMB storage).
+on property:vendor.sys.listeners.registered=true
+    restart keymaster-4-0
+    restart gatekeeper-1-0
+
+service vendor.qseecomd /vendor/bin/qseecomd
+    class core
+    user root
+    group root
