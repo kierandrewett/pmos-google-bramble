@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): boost phoc, phosh and phrog on the CPU and keep the GPU
+# above its lowest clock, so the lock screen and greeter animate smoothly.
+# See /usr/libexec/bramble-ui-boost. Costs some power while the UI draws;
+# disable with "rc-update del bramble-ui-boost default".
+
+name="bramble-ui-boost"
+description="Boost the compositor and shell for smooth animation"
+
+command="/usr/libexec/bramble-ui-boost"
+command_background="yes"
+pidfile="/run/bramble-ui-boost.pid"
+
+depend() {
+	need localmount
+}
+
+stop_post() {
+	# Undo the boost: processes back to the root group, kernel GPU default.
+	if [ -d /dev/stune/ui ]; then
+		for pid in $(cat /dev/stune/ui/cgroup.procs); do
+			echo "$pid" > /dev/stune/cgroup.procs 2> /dev/null
+		done
+		echo 0 > /dev/stune/ui/schedtune.boost
+	fi
+	echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel
+	return 0
+}

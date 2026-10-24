@@ -10,5 +10,10 @@ rc-update -q add tqftpserv default
 rc-update -q add bramble-modem default
 rc-update -q add bramble-dsp default
 rc-update -q add bramble-gnss default
+# Optional (costs power): enable it once, when it is new, so that removing
+# it from the runlevel survives later upgrades.
+if [ "$(apk version -t "$2" 2-r29)" = "<" ]; then
+	rc-update -q add bramble-ui-boost default
+fi
 
 exit 0

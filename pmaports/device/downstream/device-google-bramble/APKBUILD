@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=28
+pkgrel=29
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -50,6 +50,8 @@ source="
 	bramble-wlfw-bdf.py
 	bramble-gnss.initd
 	bramble-gnss.sh
+	bramble-ui-boost.initd
+	bramble-ui-boost.sh
 	NetworkManager-conf.d-bramble-unmanaged.conf
 	NetworkManager-conf.d-bramble-wowlan.conf
 	ucm/sm7250-bolero-snd-card.conf
@@ -87,6 +89,8 @@ package() {
 	install -Dm755 "$srcdir"/bramble-wlfw-bdf.py "$pkgdir"/usr/libexec/bramble-wlfw-bdf
 	install -Dm755 "$srcdir"/bramble-gnss.initd "$pkgdir"/etc/init.d/bramble-gnss
 	install -Dm755 "$srcdir"/bramble-gnss.sh "$pkgdir"/usr/libexec/bramble-gnss
+	install -Dm755 "$srcdir"/bramble-ui-boost.initd "$pkgdir"/etc/init.d/bramble-ui-boost
+	install -Dm755 "$srcdir"/bramble-ui-boost.sh "$pkgdir"/usr/libexec/bramble-ui-boost
 	install -Dm644 "$srcdir"/NetworkManager-conf.d-bramble-unmanaged.conf \
 		"$pkgdir"/usr/lib/NetworkManager/conf.d/50-bramble-unmanaged.conf
 	install -Dm644 "$srcdir"/NetworkManager-conf.d-bramble-wowlan.conf \
@@ -147,6 +151,8 @@ c3679b2e1522d05f91032b093f0fd46b8956743dcf602dc9bfc5211abf9a1c964a3759db429d35dd
 7c24879b48e57c4535dcf0624b1c903abfe57cf140d08212972e76a5b2774f86b9987c11fd3388e6a9d6c011554d1e87505fdf58c6929fdae2f6964c72900ffc  bramble-wlfw-bdf.py
 07d5688976af0b44094f1721873851ebc77b20b483db6c93e460b0897ff3ea2beae48d26bbe8233d6cbe792fe83ca7f2c5c8ae049ab9d0c850c24d413eb7c8eb  bramble-gnss.initd
 b8c28b5d6b82d21e207088c19f432383d0be679409849abbc5ad40fa1a483a72418b42a0e02b9adfab44ee9f9ae0ca9e9edf09d358ddc8bd0ca2fb7232429be9  bramble-gnss.sh
+cbad80a849cd084791ac3e8e4240a76f5a12d5c76b41847141dd67cb735d4a33c2afee89017c0fcb4f8219c5e5a6f2050a1facd084c1483d0d82d3dd2b9806e2  bramble-ui-boost.initd
+2d25ee1f0e08159fab393037c7f08e52131da5ff969432d9d619f63e8df4937e7d1069b6eb29e70514746c98a77d26a458b26752e03655a9804e43315712b6aa  bramble-ui-boost.sh
 737e2fe5fcf3d274531a0b5f6f2da984d6136a34971e549cd9c609854bfbae918848cc387842620af40f89648bce36b648241bf1216cf149c2feb1ece13b3a04  NetworkManager-conf.d-bramble-unmanaged.conf
 24e5809cf3916df1cf0d5a2a25e34cea678bdf7dce040fbe70de095d37c33113e3a8131771e3711af5c68831461ca2804f95e917bb12b04d316156aaff186ce6  NetworkManager-conf.d-bramble-wowlan.conf
 cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a8634165a2233ac11d7f8978ef0ee83b094cbddc22e7f347592b  sm7250-bolero-snd-card.conf
