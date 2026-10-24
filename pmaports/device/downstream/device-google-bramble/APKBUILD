@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=23
+pkgrel=24
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -52,7 +52,6 @@ source="
 	ucm/HiFi.conf
 	bramble-firmware.initd
 	phoc.ini
-	start_gui.sh
 	10-bramble-env.conf
 	bramble-environment.conf
 	wireplumber-bramble.conf
@@ -109,9 +108,6 @@ package() {
 	# Phosh & Phrog (greeter) display scaling & config
 	install -Dm644 "$srcdir"/phoc.ini "$pkgdir"/etc/phosh/phoc.ini
 	install -Dm644 "$srcdir"/phoc.ini "$pkgdir"/etc/phrog/phoc.ini
-
-	# Interactive mobile GUI launcher
-	install -Dm755 "$srcdir"/start_gui.sh "$pkgdir"/usr/bin/start_gui.sh
 }
 
 pipewire_config() {
@@ -149,7 +145,6 @@ cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a863
 5d0b466b079326ac441ba32abb236bf56ec56c535b89ec82c801f54240d1720b39fb31fff2b44727f0ea8cc24f8d92856e73d20c07b8927a2f47b2c84c6e8560  HiFi.conf
 2d2b9ddaa2dc54ce97460a980f55927136dc4767b9d58512a8a932879a31670780f4c2b47efb353810756bb75509c599b7d5ea97842fea243b5068dea8d753ae  bramble-firmware.initd
 0cb295e52c929d8a498ad0d1d18ddffdbd6b5a29d15fca57c102fc055cdf908f36ee4fa538415b4679d4aa071da393a9cf44a6c61f749e09f05a3201139f079f  phoc.ini
-27f890feb672dc06c404415553bb289d0f576a3fafef368246a8a3364a47682a5a46e9b00fb7c76a67e179ed90d064c04f162401c5198d1183dc7764647e945d  start_gui.sh
 72792eddbb0b8317dce3147fccfb469525f241a4610f74970d71c04c2421c91d70e1d325f1e235671be3f7ed5e93796c6a258fa5415baf1f7a52e5e8c949c2a1  10-bramble-env.conf
 470c4dae7b47d79bf78c85a8a1e1e23e7c428ca72018c956f416f861892ec9c3178b55f3911da500fab098310154c6083316ab56deeedf5b22cfd347965d053d  bramble-environment.conf
 89ae0da627647fbb716f4a52577904cd8acab8515fde7a23e64e529e053099e90468a496aaf999f0760ea0e2920e39a082476ef79e551baf7d57b7c153af9d95  wireplumber-bramble.conf
