@@ -3,7 +3,9 @@ Subject: [PATCH] data: Add Google Pixel 4a (5G)
 
 Cutout and corner radius come from the Android overlay for bramble
 (config_mainBuiltInDisplayCutout: radius 40 circle at 77,77;
-rounded_corner_radius: 108px). 1080x2340 at 413 ppi is about 66x144 mm.
+rounded_corner_radius: 108px). The radius is set to 128 px so Phosh keeps
+the status icons a little further from the rounded corners. 1080x2340 at
+413 ppi is about 66x144 mm.
 
 ---
 diff --git a/data/devices/display-panels/google,bramble-sm7250.json b/data/devices/display-panels/google,bramble-sm7250.json
@@ -16,7 +18,7 @@ index 0000000..cd4097f
 +  "name": "Google Pixel 4a (5G)",
 +  "x-res": 1080,
 +  "y-res": 2340,
-+  "border-radius": 108,
++  "border-radius": 128,
 +  "width": 66,
 +  "height": 144,
 +  "cutouts" : [

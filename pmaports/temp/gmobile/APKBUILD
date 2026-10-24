@@ -5,7 +5,7 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=gmobile
 _pkgver=0.7.4
 pkgver=9999$_pkgver
-pkgrel=0
+pkgrel=1
 pkgdesc="Functions useful in mobile related, glib based projects"
 url="https://gitlab.gnome.org/World/Phosh/gmobile"
 arch="all"
@@ -50,5 +50,5 @@ examples() {
 }
 sha512sums="
 27a48bbb04d443f1d134f659a50804e35fa0eee2017dab49763aa4a80f89d38bb4b1b76f3d5b5df211a9e0fa00a982b5c7a4e024d354c79ee7513aa1edd02062  gmobile-0.7.4.tar.xz
-8ff67669eed8be761743f5e1719a56e1d5d7e55abf6e781b564a0d49d0b41dd86cdabe14e2ed753413e5a6e26c70a61b46e2acfa4f5e6e1b5850dbd0d314c788  0001-data-Add-Google-Pixel-4a-5G.patch
+50e4fda2fa1f857ee37b0c9555b2f04f8224623b4c1077350501e08aca9276e24f85abe3317e2c79ec94ab20291ba7aea356840967b95a74af460c65b9f44645  0001-data-Add-Google-Pixel-4a-5G.patch
 "
