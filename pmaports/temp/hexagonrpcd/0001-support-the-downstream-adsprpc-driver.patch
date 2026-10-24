@@ -1,0 +1,273 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] hexagonrpcd: support the downstream msm-4.19 adsprpc driver
+
+The Pixel 4a 5G (bramble) runs a downstream msm-4.19 kernel. Its adsprpc
+driver (/dev/adsprpc-smd{,-secure}) is not ABI compatible with the
+upstream fastrpc driver that hexagonrpcd 0.4.0 targets:
+
+ - There is no FASTRPC_IOCTL_INIT_ATTACH_SNS. The sensors PD is attached
+   with FASTRPC_IOCTL_INIT and FASTRPC_INIT_ATTACH_SENSORS (3), after
+   FASTRPC_IOCTL_GETINFO(ADSP) has allocated the per-domain session.
+ - Invocations go through FASTRPC_IOCTL_INVOKE_CRC, and the argument
+   array is {pointer, length} (16 bytes), not the 24-byte upstream
+   struct fastrpc_invoke_args with fd and attr.
+
+Also map the sensors factory_data and sns_reg_version from the registry
+so the SSC firmware finds its calibration, and warn only once per path
+about registry writes: the sensors DSP retries a refused write in a tight
+loop, which otherwise floods the log.
+
+The result only works with the downstream driver and replaces the
+upstream ioctl calls, so this package is for bramble only.
+---
+diff -r a/hexagonrpcd/apps_std.c b/hexagonrpcd/apps_std.c
+--- a/hexagonrpcd/apps_std.c
++++ b/hexagonrpcd/apps_std.c
+@@ -167,8 +167,14 @@
+ 
+ 	rw_mode = ((const char *) inbufs[4].p)[0];
+ 	if (rw_mode == 'w' || rw_mode == 'a') {
+-		fprintf(stderr, "Tried to open %s for writing\n",
+-				(const char *) inbufs[3].p);
++		static char last_warned[256];
++
++		/* The sensors DSP retries a failed registry write in a loop. */
++		if (strncmp(last_warned, inbufs[3].p, sizeof(last_warned))) {
++			fprintf(stderr, "Tried to open %s for writing\n",
++					(const char *) inbufs[3].p);
++			strncpy(last_warned, inbufs[3].p, sizeof(last_warned) - 1);
++		}
+ 		return AEE_EUNSUPPORTED;
+ 	}
+ 
+diff -r a/hexagonrpcd/rpcd.c b/hexagonrpcd/rpcd.c
+--- a/hexagonrpcd/rpcd.c
++++ b/hexagonrpcd/rpcd.c
+@@ -34,6 +34,21 @@
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ 
++/* Downstream (msm-4.19) adsprpc INIT ABI; upstream misc/fastrpc.h differs. */
++struct fastrpc_ioctl_init_dl {
++	__u32 flags;
++	__u64 file;
++	__u32 filelen;
++	__s32 filefd;
++	__u64 mem;
++	__u32 memlen;
++	__s32 memfd;
++};
++#define FASTRPC_IOCTL_INIT_DL _IOWR('R', 6, struct fastrpc_ioctl_init_dl)
++/* Downstream GETINFO(cid) allocates the per-domain session; INIT needs it. */
++#define FASTRPC_IOCTL_GETINFO_DL _IOWR('R', 8, __u32)
++#define FASTRPC_DOMAIN_ADSP 0
++
+ #include "aee_error.h"
+ #include "apps_mem.h"
+ #include "apps_std.h"
+@@ -475,8 +490,23 @@
+ 		goto err_free_pids;
+ 	}
+ 
+-	if (attach_sns)
+-		ret = ioctl(fd, FASTRPC_IOCTL_INIT_ATTACH_SNS, NULL);
++	if (attach_sns) {
++		/*
++		 * Downstream msm-4.19 adsprpc has no FASTRPC_IOCTL_INIT_ATTACH_SNS;
++		 * it attaches the sensors PD via FASTRPC_IOCTL_INIT with
++		 * FASTRPC_INIT_ATTACH_SENSORS (3).
++		 */
++		struct fastrpc_ioctl_init_dl init = { .flags = 3 };
++		__u32 domain = FASTRPC_DOMAIN_ADSP;
++
++		/* GETINFO(ADSP) allocates the domain session; INIT returns EBADR without it. */
++		ret = ioctl(fd, FASTRPC_IOCTL_GETINFO_DL, &domain);
++		if (ret) {
++			fprintf(stderr, "FASTRPC GETINFO(ADSP) failed: %s\n", strerror(errno));
++			goto err_close_dev;
++		}
++		ret = ioctl(fd, FASTRPC_IOCTL_INIT_DL, &init);
++	}
+ 	else if (create_shell != NULL)
+ 		ret = create_shell_pd(fd, create_shell);
+ 	else
+diff -r a/hexagonrpcd/rpcd_builder.c b/hexagonrpcd/rpcd_builder.c
+--- a/hexagonrpcd/rpcd_builder.c
++++ b/hexagonrpcd/rpcd_builder.c
+@@ -32,6 +32,8 @@
+ #define SENSORS_REGISTRY	"/sensors/registry/"
+ #define SNS_REG_CONFIG		"/sensors/sns_reg.conf"
+ #define SYSFS_SOCINFO		"/socinfo/"
++#define SENSORS_FACTORY		"/sensors/factory_data/"
++#define SNS_REG_VERSION		"/sensors/sns_reg_version"
+ 
+ static struct hexagonfs_dirent *hfs_mkdir(const char *name, size_t n_ents, ...)
+ {
+@@ -111,7 +113,7 @@
+  */
+ struct hexagonfs_dirent *construct_root_dir(const char *prefix, const char *dsp)
+ {
+-	char *acdbdata, *dsp_libs, *sns_cfg, *sns_reg, *sns_reg_config, *socinfo;
++	char *acdbdata, *dsp_libs, *sns_cfg, *sns_reg, *sns_reg_config, *socinfo, *sns_fac, *sns_ver;
+ 	size_t n_prefix;
+ 	struct hexagonfs_dirent *persist_dir, *vendor_dir;
+ 
+@@ -122,6 +124,8 @@
+ 	sns_reg = malloc(n_prefix + strlen(SENSORS_REGISTRY) + 1);
+ 	sns_reg_config = malloc(n_prefix + strlen(SNS_REG_CONFIG) + 1);
+ 	socinfo = malloc(n_prefix + strlen(SYSFS_SOCINFO) + 1);
++	sns_fac = malloc(n_prefix + strlen(SENSORS_FACTORY) + 1);
++	sns_ver = malloc(n_prefix + strlen(SNS_REG_VERSION) + 1);
+ 
+ 	dsp_libs = malloc(n_prefix + strlen(DSP_LIBS) + strlen(dsp) + 1);
+ 
+@@ -156,14 +160,26 @@
+ 		strcat(dsp_libs, dsp);
+ 	}
+ 
++	if (sns_fac != NULL) {
++		strcpy(sns_fac, prefix);
++		strcat(sns_fac, SENSORS_FACTORY);
++	}
++
++	if (sns_ver != NULL) {
++		strcpy(sns_ver, prefix);
++		strcat(sns_ver, SNS_REG_VERSION);
++	}
++
+ 	/*
+ 	 * Some platforms need this in / and some need it in /mnt/vendor. Form
+ 	 * a hard link between both locations.
+ 	 */
+ 	persist_dir = hfs_mkdir("persist", 1,
+ 				hfs_mkdir("sensors", 1,
+-					hfs_mkdir("registry", 1,
+-						hfs_map("registry", sns_reg)
++					hfs_mkdir("registry", 3,
++						hfs_map("registry", sns_reg),
++						hfs_map_or_empty("factory_data", sns_fac),
++						hfs_map_or_empty("sns_reg_version", sns_ver)
+ 					)
+ 				)
+ 		      );
+diff -r a/libhexagonrpc/fastrpc.c b/libhexagonrpc/fastrpc.c
+--- a/libhexagonrpc/fastrpc.c
++++ b/libhexagonrpc/fastrpc.c
+@@ -27,8 +27,36 @@
+ #include <sys/ioctl.h>
+ #include <stdio.h>
+ 
++/*
++ * Same layout as the kernel's struct fastrpc_ioctl_invoke_crc, so the
++ * ioctl number matches FASTRPC_IOCTL_INVOKE_CRC. fds/attrs/crc are NULL.
++ */
++struct fastrpc_invoke_crc_compat {
++	uint32_t handle;
++	uint32_t sc;
++	uint64_t args;
++	int *fds;
++	unsigned int *attrs;
++	unsigned int *crc;
++};
++
++/*
++ * One argument entry as the downstream adsprpc driver reads it: union
++ * remote_arg, i.e. {void *pv; size_t len}, 16 bytes. Do not use the uapi
++ * misc/fastrpc.h struct fastrpc_invoke_args (24 bytes, adds fd/attr): the
++ * driver then reads the wrong stride for every buffer after the first.
++ */
++struct fastrpc_remote_arg {
++	uint64_t ptr;
++	uint64_t length;
++};
++
++
++#define FASTRPC_IOCTL_INVOKE_CRC_COMPAT \
++	_IOWR('R', 11, struct fastrpc_invoke_crc_compat)
++
+ static void allocate_first_inbuf(const struct fastrpc_function_def_interp2 *def,
+-				 struct fastrpc_invoke_args *arg,
++				 struct fastrpc_remote_arg *arg,
+ 				 uint32_t **inbuf)
+ {
+ 	uint32_t *buf;
+@@ -46,12 +74,11 @@
+ 	if (buf != NULL) {
+ 		arg->ptr = (__u64) buf;
+ 		arg->length = len;
+-		arg->fd = -1;
+ 	}
+ }
+ 
+ static void allocate_first_outbuf(const struct fastrpc_function_def_interp2 *def,
+-				  struct fastrpc_invoke_args *arg,
++				  struct fastrpc_remote_arg *arg,
+ 				  uint32_t **outbuf)
+ {
+ 	uint32_t *buf;
+@@ -69,7 +96,6 @@
+ 	if (buf != NULL) {
+ 		arg->ptr = (__u64) buf;
+ 		arg->length = len;
+-		arg->fd = -1;
+ 	}
+ }
+ 
+@@ -80,7 +106,7 @@
+  * First, it allocates a new first output buffer to contain the returned 32-bit
+  * integers. This output buffer must be freed after use.
+  *
+- * With a peek at the output arguments, it populates the fastrpc_invoke_args
++ * With a peek at the output arguments, it populates the fastrpc_remote_arg
+  * struct to give information about the buffer to the kernel, and adds an entry
+  * to the first input buffer to tell the remote processor how large the
+  * function-level output buffer can be.
+@@ -91,7 +117,7 @@
+  * used it causes undefined behavior.
+  */
+ static void prepare_outbufs(const struct fastrpc_function_def_interp2 *def,
+-			    struct fastrpc_invoke_args *args,
++			    struct fastrpc_remote_arg *args,
+ 			    uint8_t out_count,
+ 			    uint32_t *inbuf,
+ 			    uint32_t **outbuf,
+@@ -113,7 +139,6 @@
+ 
+ 		args[off + i].ptr = (__u64) va_arg(peek, void *);
+ 		args[off + i].length = size;
+-		args[off + i].fd = -1;
+ 
+ 		inbuf[i] = size;
+ 	}
+@@ -169,8 +194,8 @@
+ 	      int fd, uint32_t handle, va_list arg_list)
+ {
+ 	va_list peek;
+-	struct fastrpc_invoke invoke;
+-	struct fastrpc_invoke_args *args;
++	struct fastrpc_invoke_crc_compat invoke;
++	struct fastrpc_remote_arg *args;
+ 	uint32_t *inbuf;
+ 	uint32_t *outbuf;
+ 	uint8_t in_count;
+@@ -203,7 +228,6 @@
+ 
+ 		args[i + 1].ptr = (__u64) va_arg(arg_list, void *);
+ 		args[i + 1].length = size;
+-		args[i + 1].fd = -1;
+ 
+ 		inbuf[def->in_nums + i] = size;
+ 	}
+@@ -220,8 +244,11 @@
+ 	invoke.handle = handle;
+ 	invoke.sc = REMOTE_SCALARS_MAKE(def->msg_id, in_count, out_count);
+ 	invoke.args = (__u64) args;
++	invoke.fds = NULL;
++	invoke.attrs = NULL;
++	invoke.crc = NULL;
+ 
+-	ret = ioctl(fd, FASTRPC_IOCTL_INVOKE, (__u64) &invoke);
++	ret = ioctl(fd, FASTRPC_IOCTL_INVOKE_CRC_COMPAT, (__u64) &invoke);
+ 
+ 	for (i = 0; i < def->out_nums; i++)
+ 		*va_arg(arg_list, uint32_t *) = outbuf[i];

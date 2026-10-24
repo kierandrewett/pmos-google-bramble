@@ -1,0 +1,56 @@
+# Forked from Alpine for temporary downstream patches
+# The Pixel 4a 5G runs a downstream msm-4.19 kernel whose adsprpc driver is
+# not ABI compatible with upstream fastrpc (see the patch).
+# Contributor: Dylan Van Assche <dylan@postmarketos.org>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=hexagonrpcd
+_pkgver=0.4.0
+pkgver=9999$_pkgver
+pkgrel=0
+pkgdesc="Qualcomm HexagonFS daemon (downstream adsprpc support for google-bramble)"
+url="https://github.com/linux-msm/hexagonrpc"
+arch="aarch64"
+license="GPL-3.0-or-later"
+makedepends="linux-headers meson"
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd $pkgname-udev"
+
+source="$pkgname-$_pkgver.tar.gz::https://github.com/linux-msm/hexagonrpc/archive/refs/tags/v$_pkgver.tar.gz
+	0001-support-the-downstream-adsprpc-driver.patch
+	10-fastrpc.rules
+	$pkgname-adsp-rootpd.initd
+	$pkgname-adsp-sensorspd.initd
+	$pkgname-sdsp.initd
+	systemd-services.patch
+	"
+builddir="$srcdir/hexagonrpc-$_pkgver"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	# Allow access for FastRPC node for FastRPC user/group
+	install -Dm644 "$srcdir"/10-fastrpc.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+
+	install -Dm755 "$srcdir"/$pkgname-adsp-rootpd.initd "$pkgdir"/etc/init.d/$pkgname-adsp-rootpd
+	install -Dm755 "$srcdir"/$pkgname-adsp-sensorspd.initd "$pkgdir"/etc/init.d/$pkgname-adsp-sensorspd
+	install -Dm755 "$srcdir"/$pkgname-sdsp.initd "$pkgdir"/etc/init.d/$pkgname-sdsp
+}
+
+sha512sums="
+18ebe4beeed97018243bec5043b8395c07c76f1174085e41a32648fd481485076fefffa091700ca1f72163687405456e5537aa538bc4f08fecacb3f83e3a82d8  hexagonrpcd-0.4.0.tar.gz
+3cf0346aed953d0ea7e17217dcaa20f908c57e6de53f551e71d4811f8dbb33f4bd36962a7f818449789031d05a711d82ddbb7a91b898d4e0a291591b9cab40dd  0001-support-the-downstream-adsprpc-driver.patch
+f931cf5f901a7c17ffb0eb194b5de2c532fd238692898bf264c484b13b93119c9727bd8f8daf6a7d1668cc9108a9a0662231d300c6f1376e3e4edd3ce41d235d  10-fastrpc.rules
+934fda348f8b8896d15fa892e81e6dea022144c9bfcb557c0938898ac452ee3ab6a39f7ceaa54ede2ea78711f3516375c01746f8c55d1acec5ec1f1d9c9f816b  hexagonrpcd-adsp-rootpd.initd
+429f4f76e527b4289f95628603e4cee8b8d048d9a2a594ee367e5765b7554f494848c1f1aa0a7da84c193a698cd885e9325323fb6239293f1718775015cd3df0  hexagonrpcd-adsp-sensorspd.initd
+c88d3a813aa92298c3585c33111389c7175c67240497f2aeeb413228ccd8b991ed2e5edd2ffd4603389cfc9c8af6dfc5cd4c94c9979919e3efdd5bd5f547c9bd  hexagonrpcd-sdsp.initd
+2ebd6709180f2c60e355770d091c61d95e012727c94101d5e3e451c91af43f4334ef02ebd85c8ad1f99d3adc7fcb27ff5db1afaeec71cddc638db95b626128ad  systemd-services.patch
+"
