@@ -1,0 +1,149 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] mm: allow read-only shared mappings of write-sealed memfds
+
+On this kernel, mmap(PROT_READ, MAP_SHARED) of a memfd with F_SEAL_WRITE
+fails with EPERM: mmap_region() counts every VM_SHARED mapping as
+writable before ->mmap() runs. Mainline fixed this in 6.7 ("mm: perform
+the mapping_map_writable() check after call_mmap()" and "mm: update
+memfd seal write check to include F_SEAL_WRITE", Lorenzo Stoakes); user
+space now relies on it. glycin, the image loader of GNOME apps, hands
+decoded images over in sealed memfds, so Loupe showed "Could not load
+image" for every photo.
+
+Backport the idea: shmem_mmap() treats F_SEAL_WRITE like
+F_SEAL_FUTURE_WRITE (no writable shared mappings, VM_MAYWRITE cleared
+on read-only ones), and only shared mappings that may become writable
+(VM_SHARED and VM_MAYWRITE) count in i_mmap_writable, checked after
+->mmap() in mmap_region() and the same in __vma_link_file(),
+__remove_shared_vm_struct() and dup_mmap().
+---
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -1637,6 +1637,22 @@
+ 	return !vma->vm_ops;
+ }
+ 
++/*
++ * A shared mapping that could ever be made writable. Read-only shared
++ * mappings of a write-sealed memfd have VM_MAYWRITE cleared, so they do not
++ * count against the seal.
++ */
++static inline bool is_shared_maywrite(vm_flags_t vm_flags)
++{
++	return (vm_flags & (VM_SHARED | VM_MAYWRITE)) ==
++		(VM_SHARED | VM_MAYWRITE);
++}
++
++static inline bool vma_is_shared_maywrite(struct vm_area_struct *vma)
++{
++	return is_shared_maywrite(vma->vm_flags);
++}
++
+ #ifdef CONFIG_SHMEM
+ /*
+  * The vma_is_shmem is not inline because it is used only by slow
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -562,7 +562,7 @@
+ 			if (tmp->vm_flags & VM_DENYWRITE)
+ 				atomic_dec(&inode->i_writecount);
+ 			i_mmap_lock_write(mapping);
+-			if (tmp->vm_flags & VM_SHARED)
++			if (vma_is_shared_maywrite(tmp))
+ 				atomic_inc(&mapping->i_mmap_writable);
+ 			flush_dcache_mmap_lock(mapping);
+ 			/* insert tmp into the share list, just after mpnt */
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -140,7 +140,7 @@
+ {
+ 	if (vma->vm_flags & VM_DENYWRITE)
+ 		atomic_inc(&file_inode(file)->i_writecount);
+-	if (vma->vm_flags & VM_SHARED)
++	if (vma_is_shared_maywrite(vma))
+ 		mapping_unmap_writable(mapping);
+ 
+ 	flush_dcache_mmap_lock(mapping);
+@@ -587,7 +587,7 @@
+ 
+ 		if (vma->vm_flags & VM_DENYWRITE)
+ 			atomic_dec(&file_inode(file)->i_writecount);
+-		if (vma->vm_flags & VM_SHARED)
++		if (vma_is_shared_maywrite(vma))
+ 			atomic_inc(&mapping->i_mmap_writable);
+ 
+ 		flush_dcache_mmap_lock(mapping);
+@@ -1695,6 +1695,7 @@
+ 	int error;
+ 	struct rb_node **rb_link, *rb_parent;
+ 	unsigned long charged = 0;
++	bool writable_file_mapping = false;
+ 
+ 	/* Check against address space limit. */
+ 	if (!may_expand_vm(mm, vm_flags, len >> PAGE_SHIFT)) {
+@@ -1759,11 +1760,6 @@
+ 			if (error)
+ 				goto free_vma;
+ 		}
+-		if (vm_flags & VM_SHARED) {
+-			error = mapping_map_writable(file->f_mapping);
+-			if (error)
+-				goto allow_write_and_free_vma;
+-		}
+ 
+ 		/* ->mmap() can change vma->vm_file, but must guarantee that
+ 		 * vma_link() below can deny write-access if VM_DENYWRITE is set
+@@ -1786,6 +1782,17 @@
+ 
+ 		addr = vma->vm_start;
+ 		vm_flags = vma->vm_flags;
++
++		/*
++		 * Take the writable count only now: ->mmap() may have cleared
++		 * VM_MAYWRITE (read-only mapping of a write-sealed memfd).
++		 */
++		if (is_shared_maywrite(vm_flags)) {
++			error = mapping_map_writable(file->f_mapping);
++			if (error)
++				goto unmap_and_free_vma;
++			writable_file_mapping = true;
++		}
+ 	} else if (vm_flags & VM_SHARED) {
+ 		error = shmem_zero_setup(vma);
+ 		if (error)
+@@ -1797,7 +1804,7 @@
+ 	vma_link(mm, vma, prev, rb_link, rb_parent);
+ 	/* Once vma denies write, undo our temporary denial count */
+ 	if (file) {
+-		if (vm_flags & VM_SHARED)
++		if (writable_file_mapping)
+ 			mapping_unmap_writable(file->f_mapping);
+ 		if (vm_flags & VM_DENYWRITE)
+ 			allow_write_access(file);
+@@ -1838,9 +1845,8 @@
+ 
+ 	/* Undo any partial mapping done by a device driver. */
+ 	unmap_region(mm, vma, prev, vma->vm_start, vma->vm_end);
+-	if (vm_flags & VM_SHARED)
++	if (writable_file_mapping)
+ 		mapping_unmap_writable(file->f_mapping);
+-allow_write_and_free_vma:
+ 	if (vm_flags & VM_DENYWRITE)
+ 		allow_write_access(file);
+ free_vma:
+--- a/mm/shmem.c
++++ b/mm/shmem.c
+@@ -2240,10 +2240,10 @@
+ {
+ 	struct shmem_inode_info *info = SHMEM_I(file_inode(file));
+ 
+-	if (info->seals & F_SEAL_FUTURE_WRITE) {
++	if (info->seals & (F_SEAL_WRITE | F_SEAL_FUTURE_WRITE)) {
+ 		/*
+-		 * New PROT_WRITE and MAP_SHARED mmaps are not allowed when
+-		 * "future write" seal active.
++		 * New PROT_WRITE and MAP_SHARED mmaps are not allowed when a
++		 * write seal is active.
+ 		 */
+ 		if ((vma->vm_flags & VM_SHARED) && (vma->vm_flags & VM_WRITE))
+ 			return -EPERM;
