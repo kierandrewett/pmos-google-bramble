@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=32
+pkgrel=33
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -57,6 +57,7 @@ source="
 	0020-Bluetooth-qca-run-the-WCN3991-without-in-band-sleep.patch
 	0021-input-fts_touch-allow-waking-on-a-single-tap.patch
 	0022-Bluetooth-hci_qca-start-the-WCN3991-unconfigured.patch
+	0023-proc-look-up-the-superblock-in-the-user-namespace-of-the-pid-namespace.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -132,4 +133,5 @@ c8a725eb9089b41d11ab0bc9a4f5481d11fe9bda18b20a7d212b8c02dac0806ffceeb013b4c96c56
 209644d93d4e28b9801a44d1538a11aa62baaa5183a92141f6f97b4bcb81b1f088523c1a4b1bd2aeda26f579880e1b8cf29dbeb9b4d12494b7cc0695d3d754f5  0020-Bluetooth-qca-run-the-WCN3991-without-in-band-sleep.patch
 564db2f608a9bbca8159559e4f70a966e4810a9a2412ec71a80918cacd5bdca30135440e60aaef2ffdff19420a4c16d0945f6884a3682069f37c7898c31427f2  0021-input-fts_touch-allow-waking-on-a-single-tap.patch
 10189aeffceab72b2ea91b0742dacbf854861f39227ca9ac1c5ce2f75b528dcb06297cef879cac60d18add1c696a105fe4b99aa1f776753edec615db65bd5c36  0022-Bluetooth-hci_qca-start-the-WCN3991-unconfigured.patch
+2bc441d2f9fb557ac33020b30c6e9614607bfa43877ef2ff4004e8f4581eecdf46a297b457fd18ed28b1b5dd8febc47971d604d3f8fdecb5d8b96ade691bc41b  0023-proc-look-up-the-superblock-in-the-user-namespace-of-the-pid-namespace.patch
 "

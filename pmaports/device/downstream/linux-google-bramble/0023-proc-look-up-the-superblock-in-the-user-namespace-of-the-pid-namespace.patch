@@ -1,0 +1,31 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] proc: look up the superblock in the user namespace of the pid namespace
+
+proc_mount() calls sget(), which compares the existing superblock of the
+pid namespace against the caller's user namespace and fails with EBUSY
+if they differ. The superblock is created by pid_ns_prepare_proc() with
+the user namespace that owns the pid namespace, so a process in a user
+namespace nested below that owner can never mount its own procfs, even
+with CAP_SYS_ADMIN over the pid namespace (checked just above).
+
+bubblewrap does exactly this: it creates the user and pid namespaces
+together, then enters a nested user namespace before mounting /proc.
+"bwrap --unshare-user --unshare-pid ... --proc /proc" fails with "Can't
+mount proc on /proc: Resource busy", which breaks the WebKitGTK sandbox
+(Epiphany aborts at start).
+
+Mainline 4.19 used mount_ns(..., ns->user_ns, ...), which passes the
+right user namespace; do the same with sget_userns().
+---
+--- a/fs/proc/root.c	2026-10-24 18:02:08.486847121 +0100
++++ b/fs/proc/root.c	2026-10-24 18:02:08.544247811 +0100
+@@ -121,7 +121,8 @@
+ 			return ERR_PTR(-EPERM);
+ 	}
+ 
+-	sb = sget(fs_type, proc_test_super, proc_set_super, flags, ns);
++	sb = sget_userns(fs_type, proc_test_super, proc_set_super, flags,
++			 ns->user_ns, ns);
+ 	if (IS_ERR(sb))
+ 		return ERR_CAST(sb);
+ 
