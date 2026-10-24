@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=26
+pkgrel=27
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -54,6 +54,7 @@ source="
 	0017-Bluetooth-btqca-parse-NVM-files-with-an-enclosing-header.patch
 	0018-procfs-let-processes-read-their-own-fdinfo-when-not-dumpable.patch
 	0019-tty-serial-msm_geni_serial-suspend-ports-held-by-kernel-users.patch
+	0020-Bluetooth-qca-run-the-WCN3991-without-in-band-sleep.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -126,4 +127,5 @@ cd135efcbd557249efb4e07e5f1a5408cabccf00b0848a422b61471a180ac2a8fb01bfb6b257cb00
 c8a725eb9089b41d11ab0bc9a4f5481d11fe9bda18b20a7d212b8c02dac0806ffceeb013b4c96c56266eb99cdb12322513590ce3f1445935780de70746903d19  0017-Bluetooth-btqca-parse-NVM-files-with-an-enclosing-header.patch
 340be3174439fd846cba399dbe51f8b95debcaf50467518cc960cc0a066532b15ed44a951c31299aaf1c9e369304a152f600eed5169f330c99167a37a8f7ce79  0018-procfs-let-processes-read-their-own-fdinfo-when-not-dumpable.patch
 0ff198aaf0e72bab45f1f8e0057c31dc42264fd59a9a597a96d33f54ab7c2caa1fa7ce0b46de32422ad4e1c43551cf92027805f24c871b6c6d50198fc463bbdb  0019-tty-serial-msm_geni_serial-suspend-ports-held-by-kernel-users.patch
+209644d93d4e28b9801a44d1538a11aa62baaa5183a92141f6f97b4bcb81b1f088523c1a4b1bd2aeda26f579880e1b8cf29dbeb9b4d12494b7cc0695d3d754f5  0020-Bluetooth-qca-run-the-WCN3991-without-in-band-sleep.patch
 "

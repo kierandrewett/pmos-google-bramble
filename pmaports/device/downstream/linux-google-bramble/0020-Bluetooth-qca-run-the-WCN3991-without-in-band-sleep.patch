@@ -1,0 +1,62 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] Bluetooth: qca: run the WCN3991 without in-band sleep
+
+Once the NVM settings were applied (previous patch), the controller
+enabled in-band sleep (IBS) and deep sleep. After its first sleep it
+never answered the host again: the host sent thousands of HCI_IBS_WAKE_IND
+bytes and received no HCI_IBS_WAKE_ACK, so every HCI command timed out
+and discovery failed. On Android the Bluetooth HAL handles waking with
+UART clock votes (TIOCPMGET/TIOCPMPUT on the downstream msm_geni_serial
+driver); hci_qca's clock vote hooks are empty.
+
+Keep the WCN399x out of IBS and deep sleep: do not set the IBS and deep
+sleep bits in the NVM for it, and do not enable IBS on the host side.
+The controller then stays awake while Bluetooth is powered, which costs
+some idle power; turning Bluetooth off still powers it down.
+
+---
+--- a/drivers/bluetooth/btqca.c	2026-10-24 02:17:13.560076825 +0100
++++ b/drivers/bluetooth/btqca.c	2026-10-24 02:17:28.939722194 +0100
+@@ -204,9 +204,12 @@
+ 			case EDL_TAG_ID_HCI:
+ 				/* HCI transport layer parameters
+ 				 * enabling software inband sleep
+-				 * onto controller side.
++				 * onto controller side. Not on WCN399x:
++				 * hci_qca cannot wake it again through the
++				 * downstream UART driver, see hci_qca.c.
+ 				 */
+-				tlv_nvm->data[0] |= 0x80;
++				if (!config->wcn399x)
++					tlv_nvm->data[0] |= 0x80;
+ 
+ 				/* UART Baud Rate: WCN399x keep it one byte
+ 				 * earlier (mainline 7dc5fe0814c3)
+@@ -222,7 +225,8 @@
+ 				/* Sleep enable mask
+ 				 * enabling deep sleep feature on controller.
+ 				 */
+-				tlv_nvm->data[0] |= 0x01;
++				if (!config->wcn399x)
++					tlv_nvm->data[0] |= 0x01;
+ 
+ 				break;
+ 			}
+--- a/drivers/bluetooth/hci_qca.c	2026-10-24 02:17:13.560155386 +0100
++++ b/drivers/bluetooth/hci_qca.c	2026-10-24 02:17:28.939871966 +0100
+@@ -1192,7 +1192,14 @@
+ 	/* Setup patch / NVM configurations */
+ 	ret = qca_uart_setup(hdev, qca_baudrate, qcadev->btsoc_type, soc_ver);
+ 	if (!ret) {
+-		set_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
++		/* The WCN3990/WCN3991 setup leaves in-band sleep off in the
++		 * NVM: on Android the Bluetooth HAL wakes the controller with
++		 * UART clock votes this driver does not make, and with IBS on
++		 * the controller stopped answering wake requests after its
++		 * first sleep.
++		 */
++		if (qcadev->btsoc_type != QCA_WCN3990)
++			set_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
+ 		qca_debugfs_init(hdev);
+ 	} else if (ret == -ENOENT) {
+ 		/* No patch/nvm-config found, run with original fw/config */
