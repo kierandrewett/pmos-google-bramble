@@ -73,3 +73,20 @@ without an app.
 - Only one camera can be open at a time, and the first time after boot the
   ultrawide can take several seconds to start.
 - The flash LED is not used for photos.
+
+## Problems found on the way
+
+- The camera provider aborts (CamX `WaitOutFlush`) when an image reader
+  callback blocks: the HAL waits for its buffers back. The NDK helper
+  therefore never writes to the socket from a callback; a sender thread
+  does, and a slow client loses preview frames instead of stalling the HAL.
+- A PipeWire enum choice is the default followed by all allowed values.
+  The first version listed only the sizes, so the default was not among
+  the allowed values (and a single size left none); Snapshot then stopped
+  taking frames after a few.
+- A frame cut short must not be queued, even with an empty chunk: GTK's
+  texture upload in Snapshot read past it and crashed.
+- The bridge is started by gnome-session, sometimes before PipeWire; it
+  now waits for PipeWire instead of exiting.
+- The first ultrawide session after the container starts can take
+  several seconds, and once it hung until the provider restarted.

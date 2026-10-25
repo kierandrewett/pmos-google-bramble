@@ -369,8 +369,12 @@ Camera apps: `bramble-camera-ndk serve` runs inside the container and
 streams NV12 frames from the NDK camera API over a host socket
 (`/run/bramble-android/camera/camera.sock`). `bramble-camera-pipewire`
 (started in each Phosh session) turns each camera into a PipeWire video
-source node, which GNOME Snapshot uses through the camera portal. See
-[camera.md](camera.md).
+source node, which GNOME Snapshot uses through the camera portal. Photos
+are HAL stills from a JPEG output in the same capture session, which the
+patched Snapshot (`temp/snapshot`) asks the bridge for. See
+[camera.md](camera.md) for the design and the problems found on the way
+(a blocked HAL callback aborts the camera provider; a malformed size
+choice stalls Snapshot).
 
 ## Sensors
 

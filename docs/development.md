@@ -15,13 +15,14 @@ in the same directory layout, plus docs and scripts. The git history of
 | `pmaports/` | The packages, in pmaports layout. This is the source of truth: commit package changes here. |
 | `pmaports/device/downstream/device-google-bramble/` | Device package: deviceinfo, udev rules, ALSA UCM, OpenRC services for the modem, firmware, GNSS (`bramble-gnss`) and UI boost (`bramble-ui-boost`), environment for phoc, `libfix_drm_formats.so`; the `-pipewire` subpackage has the WirePlumber config and the speaker filter. |
 | `pmaports/device/downstream/linux-google-bramble/` | Downstream 4.19 kernel: config and patches `0001`-`0025`. |
-| `pmaports/device/downstream/bramble-android-hal/` | Android vendor HAL container (Halium 14 system image from `pmaports/main/halium-gsi-34/`): runs the camera and fingerprint HALs; the PipeWire camera bridge for camera apps. |
+| `pmaports/device/downstream/bramble-android-hal/` | Android vendor HAL container (Halium 14 system image from `pmaports/main/halium-gsi-34/`): runs the camera and fingerprint HALs; the PipeWire camera bridge for camera apps. The prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` are built from `tools/android-helpers/` with the Android NDK (`tools/android-helpers/build.sh`). |
 | `pmaports/device/downstream/bramble-fingerprint/` | `bramble-fingerprint` client for the fingerprint HAL (enrol, verify, list, remove). |
 | `pmaports/device/downstream/bramble-sensors/` | Sensors DSP service (Hexagon FS through `hexagonrpcd`), udev tags for iio-sensor-proxy, `bramble-sensors-demo`. |
 | `pmaports/main/qrtr-ns/`, `pd-mapper/` | QRTR name service and protection domain mapper for kernels without in-kernel QRTR NS / remoteproc. |
 | `pmaports/main/mesa-vulkan-freedreno-kgsl/` | Mesa turnip (Vulkan) for the downstream KGSL GPU driver. |
 | `pmaports/temp/tqftpserv/`, `temp/gmobile/`, `temp/phoc/`, `temp/bubblewrap/`, `temp/hexagonrpcd/`, `temp/iio-sensor-proxy/` | Temporary forks of Alpine packages with bramble patches. `temp/phoc` adds the screen fade and a crash fix; phoc and Phosh are released together, so rebase it when Alpine edge moves Phosh to a new version. |
 | `pmaports/temp/adbd/`, `temp/scrcpy-server/` | adb daemon (USB and TCP) and a native scrcpy server, so the stock `adb` and `scrcpy` work from a PC. |
+| `pmaports/temp/snapshot/` | GNOME Snapshot with a patch that takes photos through the camera HAL. pmbootstrap builds its Rust code under QEMU, which takes hours; building it on the phone with `abuild` from the same directory takes about 15 minutes. |
 | `scripts/setup-pmaports.sh` | Puts these packages into a pmaports checkout at the pinned commit. |
 | `scripts/ci.sh`, `scripts/check-versions.py` | The pmaports CI checks for this overlay (also run by `.github/workflows/ci.yml`). |
 | `docs/` | Documentation. |
