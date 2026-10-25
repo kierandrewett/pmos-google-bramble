@@ -8,13 +8,15 @@
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=adbd
 pkgver=36.0.1
-pkgrel=1
+pkgrel=2
 pkgdesc="Android Debug Bridge daemon, standalone Linux build (USB FunctionFS and TCP)"
 url="https://github.com/happyme531/standalone-linux-adbd"
 arch="aarch64"
 license="Apache-2.0"
 makedepends="cmake linux-headers ninja patch xz"
 subpackages="$pkgname-openrc"
+# Part of the google-bramble port: install it with the device package.
+install_if="device-google-bramble"
 options="!check" # No test suite for the daemon-only build
 
 _standalone=bdb5cdc4b516b3bc71fd2b805bc36190041a9393

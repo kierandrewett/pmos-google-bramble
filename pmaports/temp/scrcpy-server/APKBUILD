@@ -5,7 +5,7 @@
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=scrcpy-server
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc="Native scrcpy server for postmarketOS (wlr-screencopy, x264, uinput), with an app_process shim"
 url="https://github.com/Genymobile/scrcpy"
 arch="aarch64"
@@ -13,6 +13,8 @@ license="GPL-3.0-or-later"
 depends="x264-libs wayland-libs-client"
 makedepends="wayland-dev x264-dev wlr-protocols"
 install="$pkgname.post-install"
+# Part of the google-bramble port: install it with the device package.
+install_if="device-google-bramble"
 options="!check" # No test suite for the native server
 source="scrcpy_server.c
 	app_process
