@@ -1,1 +1,5 @@
-SUBSYSTEM=="fastrpc", KERNEL=="adsprpc-smd-secure", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel ssc-light ssc-proximity"
+# The sensors are on the ADSP and reached through the downstream adsprpc node.
+# Tag it for the iio-sensor-proxy SSC backend. The LSM6DSR is mounted rotated
+# by 180 degrees around the screen normal relative to the screen axes, so
+# without the matrix the screen rotates upside down.
+SUBSYSTEM=="fastrpc", KERNEL=="adsprpc-smd-secure", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel ssc-light ssc-proximity", ENV{ACCEL_MOUNT_MATRIX}="-1, 0, 0; 0, -1, 0; 0, 0, 1"

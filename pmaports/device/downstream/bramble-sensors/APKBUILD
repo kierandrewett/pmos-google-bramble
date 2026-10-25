@@ -4,7 +4,7 @@
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=bramble-sensors
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc="Google Pixel 4a (5G): sensors DSP service and demo"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -41,7 +41,7 @@ openrc() {
 }
 
 sha512sums="
-319baa7b9531ce47d76ae471e975240d835bb5b26ccea0029e023bf56e657f5d1d96fca1d0ec3d579a1ccba1f513cc899e2b2483a48462161ce592b564917175  71-bramble-sensors.rules
+91bbc44633ff753489103af4b1bc36ce3a6333c2ce7699c6387d7d3d89c0423753279f8c6b587dd080118ac066176ccd6c963b5d88838f54a50c350ce883c9d5  71-bramble-sensors.rules
 b092ef545f29b12799b4e1f9dc6dd8881986fb1da0b418e6c9e15153ee0af495965576262c6484fe5167d4ff739150e3d171ceb50b6c9a3f0aff9b56683a0f51  bramble-sensors-demo
 011cca2d8341eb0283ed99e98da5951a4039bc12acf4ab7b73b7165aae7cd80bc363790b42e34431b3426f0dddd84a75f56443666cd4a582cae5ad9e8ff94ade  bramble-sensors.initd
 "
