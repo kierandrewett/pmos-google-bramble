@@ -171,9 +171,16 @@ setup_namespace() {
 	for d in apex bootstrap-apex linkerconfig debug_ramdisk second_stage_resources mnt; do
 		mount -t tmpfs -o nosuid,nodev,mode=0755 tmpfs $ROOT/$d
 	done
+	# persist is writable on Android: Qualcomm's secure storage keeps files
+	# there for the trusted apps, and the fingerprint app needs it to store a
+	# new fingerprint (with persist read-only the last enrol step fails with
+	# FPC_ERROR_INPUT). msm-firmware-loader mounts it read-only on the host;
+	# make the filesystem writable, give the container a writable bind and
+	# set the host's mount back to read-only (that is per mount).
 	mkdir -p $ROOT/mnt/vendor/persist
+	mount -o remount,rw $PERSIST
 	mount --bind $PERSIST $ROOT/mnt/vendor/persist
-	mount -o remount,bind,ro $ROOT/mnt/vendor/persist
+	mount -o remount,bind,ro $PERSIST
 	mount --bind $STATE/data $ROOT/data
 	# Camera frame socket (bramble-camera-ndk serve), reachable from the
 	# host for members of the video group only.
