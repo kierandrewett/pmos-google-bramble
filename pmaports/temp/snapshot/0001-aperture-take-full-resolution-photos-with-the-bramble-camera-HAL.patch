@@ -1,0 +1,152 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] aperture: take full-resolution photos with the Pixel 4a (5G) camera HAL
+
+On the Pixel 4a (5G) (google-bramble, postmarketOS) the cameras come from
+the vendor camera HAL through bramble-camera-pipewire, whose PipeWire
+nodes carry viewfinder-sized video. Taking the photo from that stream
+gives a small, preview-quality picture. When the camera is one of the
+bramble nodes and the bridge's control socket exists, ask the bridge for a
+still instead: the HAL takes it at the sensor's full resolution with its
+own processing and JPEG encoder, oriented by the device rotation from
+iio-sensor-proxy. Other cameras are not affected.
+---
+--- a/aperture/src/viewfinder.rs
++++ b/aperture/src/viewfinder.rs
+@@ -602,6 +602,33 @@
+             return Err(crate::CaptureError::RecordingInProgress);
+         }
+ 
++        // On the Pixel 4a (5G) the camera HAL takes the photo at full
++        // resolution with its own processing; see bramble::capture.
++        if let Some(node) = self.camera().as_ref().and_then(bramble::node_name) {
++            imp.is_taking_picture.set(true);
++            let rotation = bramble::rotation();
++            let path = location.as_ref().to_owned();
++            let obj = self.downgrade();
++            glib::spawn_future_local(async move {
++                let target = path.clone();
++                let res = gio::spawn_blocking(move || bramble::capture(&node, rotation, &target)).await;
++                let Some(obj) = obj.upgrade() else { return };
++                match res {
++                    Ok(Ok(())) => obj.on_image_done(&gio::File::for_path(&path)),
++                    Ok(Err(err)) => {
++                        log::error!("Could not take picture: {err}");
++                        obj.imp().is_taking_picture.set(false);
++                        obj.emit_picture_done(None);
++                    }
++                    Err(_) => {
++                        obj.imp().is_taking_picture.set(false);
++                        obj.emit_picture_done(None);
++                    }
++                }
++            });
++            return Ok(());
++        }
++
+         // Set after we cannot fail anymore.
+         imp.is_taking_picture.set(true);
+ 
+@@ -1282,3 +1309,103 @@
+ 
+     Ok(bin.upcast())
+ }
++
++/// Photos with the Pixel 4a (5G) cameras (google-bramble, postmarketOS).
++///
++/// The cameras come from the vendor camera HAL through
++/// bramble-camera-pipewire, which offers viewfinder-sized video. For photos
++/// it asks the HAL for a full-resolution still with the HAL's own processing
++/// and JPEG encoder, on the control socket
++/// `$XDG_RUNTIME_DIR/bramble-camera.sock`.
++mod bramble {
++    use std::cell::RefCell;
++    use std::io::{BufRead, BufReader, Write};
++    use std::os::unix::net::UnixStream;
++    use std::path::{Path, PathBuf};
++    use std::time::Duration;
++
++    use gtk::prelude::*;
++    use gtk::{gio, glib};
++
++    fn socket() -> PathBuf {
++        glib::user_runtime_dir().join("bramble-camera.sock")
++    }
++
++    /// The PipeWire node name of a bramble camera, if the bridge is running.
++    pub fn node_name(camera: &crate::Camera) -> Option<String> {
++        if !socket().exists() {
++            return None;
++        }
++        camera
++            .properties()
++            .get("node.name")
++            .and_then(|value| value.get::<String>().ok())
++            .filter(|name| name.starts_with("bramble-camera-"))
++    }
++
++    thread_local! {
++        static SENSOR: RefCell<Option<gio::DBusProxy>> = const { RefCell::new(None) };
++    }
++
++    /// How far the device is turned clockwise from portrait, in degrees,
++    /// from iio-sensor-proxy (0 if unknown).
++    pub fn rotation() -> i32 {
++        SENSOR.with(|sensor| {
++            let mut sensor = sensor.borrow_mut();
++            if sensor.is_none() {
++                let proxy = gio::DBusProxy::for_bus_sync(
++                    gio::BusType::System,
++                    gio::DBusProxyFlags::NONE,
++                    None,
++                    "net.hadess.SensorProxy",
++                    "/net/hadess/SensorProxy",
++                    "net.hadess.SensorProxy",
++                    gio::Cancellable::NONE,
++                )
++                .ok();
++                if let Some(proxy) = &proxy {
++                    // Keep the claim for the lifetime of the app, so the
++                    // orientation stays current.
++                    let _ = proxy.call_sync(
++                        "ClaimAccelerometer",
++                        None,
++                        gio::DBusCallFlags::NONE,
++                        1000,
++                        gio::Cancellable::NONE,
++                    );
++                }
++                *sensor = proxy;
++            }
++            sensor
++                .as_ref()
++                .and_then(|proxy| proxy.cached_property("AccelerometerOrientation"))
++                .and_then(|value| value.get::<String>())
++                .map(|orientation| match orientation.as_str() {
++                    "left-up" => 90,
++                    "bottom-up" => 180,
++                    "right-up" => 270,
++                    _ => 0,
++                })
++                .unwrap_or(0)
++        })
++    }
++
++    /// Asks the bridge for a full-resolution photo of `node`, written to `path`.
++    pub fn capture(node: &str, rotation: i32, path: &Path) -> Result<(), String> {
++        let mut stream = UnixStream::connect(socket()).map_err(|err| err.to_string())?;
++        stream
++            .set_read_timeout(Some(Duration::from_secs(20)))
++            .map_err(|err| err.to_string())?;
++        writeln!(stream, "capture {node} {rotation} {}", path.display())
++            .map_err(|err| err.to_string())?;
++        let mut reply = String::new();
++        BufReader::new(&stream)
++            .read_line(&mut reply)
++            .map_err(|err| err.to_string())?;
++        if reply.starts_with("ok") {
++            Ok(())
++        } else {
++            Err(reply.trim().to_owned())
++        }
++    }
++}
