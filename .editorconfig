@@ -1,0 +1,23 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{md,yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+# APKBUILDs, OpenRC scripts and the shell scripts here use tabs, like pmaports.
+[{APKBUILD,*.sh,*.initd,*.confd,*.post-install,*.pre-install}]
+indent_style = tab
+
+[*.{py,c,cpp}]
+indent_style = space
+indent_size = 4
+
+[*.patch]
+trim_trailing_whitespace = false
+insert_final_newline = unset

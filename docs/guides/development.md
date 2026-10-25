@@ -15,6 +15,7 @@ in the same directory layout, plus docs and scripts. The git history of
 | `pmaports/` | The packages, in pmaports layout. This is the source of truth: commit package changes here. [pmaports/README.md](../../pmaports/README.md) lists every package. |
 | `scripts/setup-pmaports.sh` | Puts these packages into a pmaports checkout at the pinned commit. |
 | `scripts/ci.sh`, `scripts/check-versions.py` | The pmaports CI checks for this overlay (also run by `.github/workflows/ci.yml`). |
+| `justfile` | Shortcuts for the two scripts: `just setup`, `just ci [check...]`, `just secrets`. |
 | `tools/android-helpers/` | Source of the prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` in `bramble-android-hal`. Build with the Android NDK: `tools/android-helpers/build.sh`. |
 | `tools/gnome-shell-probe/` | Runs stock GNOME Shell headless on the phone and saves a screenshot ([gnome-shell.md](../hardware/gnome-shell.md)). |
 | `docs/` | Documentation; the index is [docs/README.md](../README.md). |
