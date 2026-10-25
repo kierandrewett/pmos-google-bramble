@@ -14,11 +14,16 @@ in the same directory layout, plus docs and scripts. The git history of
 |---|---|
 | `pmaports/` | The packages, in pmaports layout. This is the source of truth: commit package changes here. |
 | `pmaports/device/downstream/device-google-bramble/` | Device package: deviceinfo, udev rules, ALSA UCM, OpenRC services for the modem, firmware, GNSS (`bramble-gnss`) and UI boost (`bramble-ui-boost`), environment for phoc, `libfix_drm_formats.so`; the `-pipewire` subpackage has the WirePlumber config and the speaker filter. |
-| `pmaports/device/downstream/linux-google-bramble/` | Downstream 4.19 kernel: config and patches `0001`-`0022`. |
+| `pmaports/device/downstream/linux-google-bramble/` | Downstream 4.19 kernel: config and patches `0001`-`0025`. |
+| `pmaports/device/downstream/bramble-android-hal/` | Android vendor HAL container (Halium 14 system image from `pmaports/main/halium-gsi-34/`): runs the camera and fingerprint HALs; the PipeWire camera bridge for camera apps. |
+| `pmaports/device/downstream/bramble-fingerprint/` | `bramble-fingerprint` client for the fingerprint HAL (enrol, verify, list, remove). |
+| `pmaports/device/downstream/bramble-sensors/` | Sensors DSP service (Hexagon FS through `hexagonrpcd`), udev tags for iio-sensor-proxy, `bramble-sensors-demo`. |
 | `pmaports/main/qrtr-ns/`, `pd-mapper/` | QRTR name service and protection domain mapper for kernels without in-kernel QRTR NS / remoteproc. |
 | `pmaports/main/mesa-vulkan-freedreno-kgsl/` | Mesa turnip (Vulkan) for the downstream KGSL GPU driver. |
-| `pmaports/temp/tqftpserv/`, `temp/gmobile/`, `temp/phoc/` | Temporary forks of Alpine packages with bramble patches. `temp/phoc` adds the screen fade and a crash fix; phoc and Phosh are released together, so rebase it when Alpine edge moves Phosh to a new version. |
+| `pmaports/temp/tqftpserv/`, `temp/gmobile/`, `temp/phoc/`, `temp/bubblewrap/`, `temp/hexagonrpcd/`, `temp/iio-sensor-proxy/` | Temporary forks of Alpine packages with bramble patches. `temp/phoc` adds the screen fade and a crash fix; phoc and Phosh are released together, so rebase it when Alpine edge moves Phosh to a new version. |
+| `pmaports/temp/adbd/`, `temp/scrcpy-server/` | adb daemon (USB and TCP) and a native scrcpy server, so the stock `adb` and `scrcpy` work from a PC. |
 | `scripts/setup-pmaports.sh` | Puts these packages into a pmaports checkout at the pinned commit. |
+| `scripts/ci.sh`, `scripts/check-versions.py` | The pmaports CI checks for this overlay (also run by `.github/workflows/ci.yml`). |
 | `docs/` | Documentation. |
 
 pmbootstrap builds from one pmaports checkout, so the packages are copied
@@ -53,12 +58,30 @@ pmbootstrap sideload device-google-bramble
 ```
 
 Or copy and install it by hand. The phone has no SFTP server, so use
-`scp -O` (legacy SCP protocol):
+`scp -O` (legacy SCP protocol), or `adb push`:
 
 ```sh
 scp -O ~/.local/var/pmbootstrap/packages/edge/aarch64/device-google-bramble-*.apk user@172.16.42.1:/tmp/
 ssh user@172.16.42.1 'sudo apk add --allow-untrusted /tmp/device-google-bramble-*.apk'
 ```
+
+### adb and screen mirroring
+
+`adbd` runs at boot and adds an adb function to the USB gadget next to
+the USB network, so `ssh` and `adb` work over the same cable:
+
+```sh
+adb devices                  # "postmarketOS" over USB
+adb connect 172.16.42.1:5555 # or over the USB network
+adb shell
+scrcpy -s postmarketOS --no-audio --max-size=1170   # mirror and control the screen
+```
+
+This adbd has no key authentication. It listens on TCP only on the USB
+network address; `/etc/conf.d/adbd` explains how to change that and the
+risk. scrcpy needs the screen on (it mirrors what phoc draws) and sends
+touch and keys back through uinput. The server encodes in software
+(x264), so it uses most of one CPU core while mirroring.
 
 ### Kernel changes
 
@@ -104,9 +127,20 @@ see porting-notes.md.
 
 Follow pmaports conventions: `maintainer=` in APKBUILDs, no executable
 files in the tree (install with `install -Dm755`), kernel patches with a
-`From:`/`Subject:` header and an explanation of why. Run the pmaports
-checks from the pmaports checkout:
+`From:`/`Subject:` header and an explanation of why.
+
+Run the pmaports CI checks before committing:
 
 ```sh
-cd build/pmaports && PYTHONPATH=/path/to/pmbootstrap:.ci/lib pytest .ci/testcases
+scripts/ci.sh            # all checks; or name some: scripts/ci.sh grep dint
 ```
+
+It builds `build/pmaports` with this repository's changes as a merge
+request on top of upstream, runs the upstream checks (shellcheck, grep,
+editorconfig, apkbuild-lint, dint, pytest, kconfig, checksums), checks
+that changed packages have a higher version than at the base revision
+(`CI_BASE`, default `origin/main` or `HEAD~1`), and scans for secrets
+with gitleaks. pmbootstrap runs with its own config and work dir under
+`build/`, so your own setup is not changed. Set `PMB_SUDO` if your sudo
+needs a wrapper. Logs are in `build/ci-logs/`. The waived findings and
+why are listed in the script.

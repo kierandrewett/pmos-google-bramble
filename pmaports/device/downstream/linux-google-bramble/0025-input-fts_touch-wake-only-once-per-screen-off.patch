@@ -1,0 +1,46 @@
+From: Kieran Drewett <kieran@drewett.dev>
+Subject: [PATCH] input: fts_touch: wake only once per screen off
+
+Tap to wake reports KEY_POWER, which Phosh treats as a toggle. The
+detector stays armed until the display is back on and the driver
+resumes, a few hundred milliseconds after the wake tap, so a quick
+second tap sent KEY_POWER again and turned the screen straight off.
+
+Send KEY_POWER only once per screen off: ignore taps after the wake
+until the detector is armed again at the next screen off.
+---
+--- a/drivers/input/touchscreen/fts_touch/fts.h
++++ b/drivers/input/touchscreen/fts_touch/fts.h
+@@ -406,6 +406,7 @@
+ 	ktime_t up_time;	/* when the first tap ended */
+ 	int x, y;		/* where the current touch started */
+ 	int first_x, first_y;	/* where the first tap started */
++	bool woke;		/* KEY_POWER sent; ignore taps until re-armed */
+ };
+ 
+ struct fts_ts_info {
+--- a/drivers/input/touchscreen/fts_touch/fts.c
++++ b/drivers/input/touchscreen/fts_touch/fts.c
+@@ -4454,6 +4454,14 @@
+ 	int y = (event[4] << 4) | ((event[3] & 0xF0) >> 4);
+ 	ktime_t now = ktime_get();
+ 
++	/*
++	 * KEY_POWER toggles the screen in Phosh. Taps keep arriving until the
++	 * display is on and the driver disarms, so send it once per screen off;
++	 * otherwise a quick second tap turns the screen straight off again.
++	 */
++	if (tap->woke)
++		return;
++
+ 	switch (event[0] >> 4) {
+ 	case EVT_ID_ENTER_POINT >> 4:
+ 		if (tap->fingers) {
+@@ -4498,6 +4506,7 @@
+ 		}
+ 
+ 		tap->taps = 0;
++		tap->woke = true;
+ 		pr_info("%s: tap, waking the screen\n", __func__);
+ 		mutex_lock(&info->input_report_mutex);
+ 		input_report_key(info->input_dev, KEY_POWER, 1);
