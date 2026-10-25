@@ -2,8 +2,6 @@
 # The Pixel 4a 5G (google-bramble) sensors reach libssc through the downstream
 # adsprpc node, which is in the fastrpc class rather than misc. The patch
 # makes iio-sensor-proxy look there too.
-# Contributor: Rasmus Thomsen <oss@cogitri.dev>
-# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=iio-sensor-proxy
 pkgver=3.9

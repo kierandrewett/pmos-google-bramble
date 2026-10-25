@@ -1,4 +1,4 @@
-# Maintainer: Kieran Drewett <kieran@drewett.dev>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
 # Halium 14 generic system image (LineageOS 21 based, built by the UBports
 # CI and packaged by Droidian). It provides the Android 14 system side
 # (init, servicemanagers, cameraserver, libhybris helpers) for running a

@@ -1,7 +1,6 @@
 # Forked from Alpine for temporary downstream patches
 # The Pixel 4a 5G runs a downstream msm-4.19 kernel whose adsprpc driver is
 # not ABI compatible with upstream fastrpc (see the patch).
-# Contributor: Dylan Van Assche <dylan@postmarketos.org>
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=hexagonrpcd
 _pkgver=0.4.0
