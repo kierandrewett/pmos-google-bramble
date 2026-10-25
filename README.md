@@ -91,6 +91,7 @@ Start at [docs/README.md](docs/README.md).
 | [experience.md](docs/experience.md) | What daily use is like. |
 | [status.md](docs/status.md) | What works, what does not, known problems. |
 | [guides/install.md](docs/guides/install.md) | Prepare the phone, build, flash. |
+| [guides/usage.md](docs/guides/usage.md) | adb and scrcpy, camera, fingerprint, services you can turn off. |
 | [guides/recovery.md](docs/guides/recovery.md) | Backups, unbricking, return to stock. |
 | [guides/development.md](docs/guides/development.md) | Change, build and test the packages. |
 | [hardware/](docs/hardware/README.md) | How each part works and why: boot, GPU, Wi-Fi, modem, audio, input, camera, sensors, fingerprint. |
