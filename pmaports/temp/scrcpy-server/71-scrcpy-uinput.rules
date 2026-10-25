@@ -1,0 +1,3 @@
+# /dev/uinput for scrcpy touch and key injection. adbd runs the adb shell with
+# the input group as its primary group, so the scrcpy server can open it.
+KERNEL=="uinput", GROUP="input", MODE="0660"

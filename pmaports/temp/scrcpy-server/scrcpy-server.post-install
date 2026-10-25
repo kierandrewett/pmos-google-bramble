@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Apply the uinput group rule to the running system without a reboot.
+udevadm control --reload-rules 2> /dev/null
+udevadm trigger --action=change --sysname-match=uinput 2> /dev/null
+
+exit 0

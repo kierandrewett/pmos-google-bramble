@@ -1,0 +1,16 @@
+#!/bin/sh
+# Stand-in for Android's app_process so stock scrcpy can start the server.
+# The client runs:
+#   CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / \
+#       com.genymobile.scrcpy.Server <version> key=value...
+# The jar is ignored; the native server takes the same key=value arguments.
+while [ $# -gt 0 ]; do
+	case "$1" in
+	com.genymobile.scrcpy.Server)
+		shift
+		break
+		;;
+	esac
+	shift
+done
+exec /usr/bin/scrcpy-server "$@"

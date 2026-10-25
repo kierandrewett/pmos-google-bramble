@@ -1,0 +1,44 @@
+# Temporary package: scrcpy-compatible server for the Pixel 4a 5G (bramble).
+# Stock scrcpy pushes scrcpy-server.jar and runs it with Android's app_process.
+# The app_process shim here runs the native wlr-screencopy/x264/uinput server
+# instead, so the scrcpy client works unchanged over adb.
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=scrcpy-server
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native scrcpy server for postmarketOS (wlr-screencopy, x264, uinput), with an app_process shim"
+url="https://github.com/Genymobile/scrcpy"
+arch="aarch64"
+license="GPL-3.0-or-later"
+depends="x264-libs wayland-libs-client"
+makedepends="wayland-dev x264-dev wlr-protocols"
+install="$pkgname.post-install"
+options="!check" # No test suite for the native server
+source="scrcpy_server.c
+	app_process
+	71-scrcpy-uinput.rules
+	"
+
+build() {
+	cd "$srcdir"
+	local wlr=/usr/share/wlr-protocols/unstable/wlr-screencopy-unstable-v1.xml
+	wayland-scanner client-header "$wlr" wlr-screencopy-unstable-v1-client-protocol.h
+	wayland-scanner private-code "$wlr" wlr-screencopy-unstable-v1-protocol.c
+	${CC:-gcc} ${CFLAGS:--O2} -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
+		-Wno-missing-field-initializers -I. -o scrcpy-server \
+		"$srcdir"/scrcpy_server.c wlr-screencopy-unstable-v1-protocol.c \
+		-lwayland-client -lx264 -lpthread -lm
+}
+
+package() {
+	install -Dm755 "$srcdir"/scrcpy-server "$pkgdir"/usr/bin/scrcpy-server
+	install -Dm755 "$srcdir"/app_process "$pkgdir"/usr/bin/app_process
+	install -Dm644 "$srcdir"/71-scrcpy-uinput.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/71-scrcpy-uinput.rules
+}
+
+sha512sums="
+18f0aa47a1e72b3758e4cf4ed92d59a1b26a4ab8d6edabda25b45a17c763755b71fbb71f16a63c4d44f6541f87f0d55bceb99dded43661811dbb1adb172a3a16  scrcpy_server.c
+68ef4e05fb4f6b9d5db4cac4e291d61cc3f55d88885e551b77b675ccc559e487fd0bf03caf35cc936b3a82735b9524a9eeef7b2d82cd539282ca2cc4d0e0b92a  app_process
+216b1dc48ce652896249b203a4a5c52d7a99ebef691c28d9af3e9dcbd4685c1b748deef257ab71f7ddbdf86ab6e0a7eee4af494d4680c1a0f209c07639d55402  71-scrcpy-uinput.rules
+"
