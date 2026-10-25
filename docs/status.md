@@ -24,6 +24,7 @@ was checked; the technical background is in
 | Screen fade | Power button: the screen fades out and in (filmed with a camera, checked by hand) | Patched phoc in `temp/phoc`; upstream Phosh switches instantly. |
 | Bluetooth | Scans LE and BR/EDR devices. In Settings, with a Linux PC as the other device: paired (the codes on both sides matched), connected, switched off and on (the phone reconnected), forgot the device. A2DP audio from a Phosh session recorded on the PC (660 Hz at -23 dBFS received at -23.0 dBFS). The PC sees the phone under its own address | WCN3991 with the in-kernel hci_qca driver (patches 0008, 0010, 0017, 0020, 0022). Each phone gets its own address from its serial number (bootmac). The controller does not use in-band sleep, so it uses some power while Bluetooth is on. Playback moves to a Bluetooth device by itself only after it was chosen once as the output, for example in Settings, Sound: WirePlumber keeps a chosen output and then switches to it on every connect. |
 | GPS | Indoors at night: ModemManager gets NMEA with 11-13 satellites in view, and a position fix after about 11 s in one test; geoclue reports "GPS GGA" positions | The modem's GNSS engine through ModemManager's QMI location support. `bramble-gnss` undoes an engine lock that ModemManager sets and that blocks it on this firmware, and gives the engine the time once the clock is synced. Apps get a position only when Location is switched on in Settings (it is off by default). |
+| Cameras (back, ultrawide, front) | In Camera (Snapshot): live viewfinder from all three, switched seven times in a row; a photo from each, saved at 4032x3024 (back, ultrawide) and 3264x2448 (front), upright, front not mirrored; a 17 s video at 1600x1200, 29 fps, with sound; a photo opened in Image Viewer | Vendor camera HAL in the Android HAL container, `bramble-camera-pipewire` for apps, and a Snapshot patch (`temp/snapshot`) that takes photos through the HAL. See [camera.md](camera.md). No flash, no HDR+ or night mode. |
 | adb and screen mirroring | From a Linux PC: `adb devices` lists the phone over USB, `adb connect 172.16.42.1:5555` works over the USB network, `adb shell` gives the default user; SSH over USB keeps working beside adb. Stock `scrcpy` 4.1 mirrors the screen (540x1170 H.264, about 24 fps over USB) and a mouse click in its window taps the phone | `temp/adbd` (AOSP adbd, standalone Linux build) and `temp/scrcpy-server` (native server behind an `app_process` shim). adbd has no key authentication, so TCP listens on the USB network address only. The server encodes in software and uses most of one CPU core while mirroring. |
 
 ## Partly works
@@ -40,7 +41,6 @@ was checked; the technical background is in
 | Feature | Why |
 |---|---|
 | Voice calls | Not tested: the test SIM is data only. |
-| Camera | Not feasible on this kernel without the vendor camera stack. See [camera.md](camera.md). |
 
 ## Known problems
 

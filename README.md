@@ -3,7 +3,7 @@
 A [postmarketOS](https://postmarketos.org) port for the Pixel 4a (5G),
 codename `google-bramble` (Snapdragon 765G, SM7250). It runs Phosh on the
 downstream Linux 4.19 vendor kernel, with GPU acceleration, Wi-Fi, mobile
-data and audio working.
+data, audio and the cameras working.
 
 This is a community port, not part of the official postmarketOS
 repositories. Expect rough edges. It is not the Pixel 4a (`sunfish`).
@@ -12,11 +12,12 @@ repositories. Expect rough edges. It is not the Pixel 4a (`sunfish`).
 
 | Works | Partly | Does not work |
 |---|---|---|
-| Display, touch, Phosh | Suspend | Voice calls (not tested) |
-| GPU acceleration (60 fps) | | Camera |
-| Wi-Fi, Bluetooth | | Sensors (rotation, proximity, light) |
+| Display, touch, Phosh | Suspend (not verified unplugged) | Voice calls (not tested) |
+| GPU acceleration (60 fps) | Sensors (auto-rotate not confirmed) | |
+| Cameras: back, ultrawide, front; photos and video | Fingerprint reader (enrolment fails at the last touch) | |
+| Wi-Fi, Bluetooth | | |
 | Mobile data (LTE), SMS, GPS | | |
-| Speakers, microphone, headphones | | Fingerprint reader |
+| Speakers, microphone, headphones | | |
 | Battery and charging | | |
 | USB networking (SSH), MTP file transfer, adb, scrcpy | | |
 | Vibration, torch, tap to wake | | |
@@ -55,7 +56,7 @@ To go back to Android: [docs/recovery.md](docs/recovery.md).
 | [recovery.md](docs/recovery.md) | Backups, unbricking, return to stock. |
 | [porting-notes.md](docs/porting-notes.md) | How each part works and why (boot chain, GPU, Wi-Fi through the modem, audio, input). |
 | [development.md](docs/development.md) | Change, build and test the packages. |
-| [camera.md](docs/camera.md) | Why the cameras do not work, and the options. |
+| [camera.md](docs/camera.md) | How the cameras work (vendor HAL, PipeWire, Snapshot) and their limits. |
 
 ## Repository layout
 
