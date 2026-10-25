@@ -382,6 +382,8 @@ The accelerometer, ambient light and proximity sensors sit behind the Qualcomm s
 
 Checked with `monitor-sensor` inside the Phosh session (it must run in the session cgroup for the polkit claim): light in lux, proximity near/far, tilt. Phosh's auto-brightness lowers the backlight at low light. Auto-rotate and the proximity blank during calls: see status.md.
 
+libssc does not know how the accelerometer is mounted: it reads the all-zero `placement` entry of the SSC registry and falls back to the identity matrix. The registry's `lsm6dsr_0_platform.orient` entry (in `persist`, `sensors/registry/registry/`) says `-x`, `-y`, `+z`, a half turn about the screen normal. Without it Phosh showed portrait upside down. `71-bramble-sensors.rules` sets `ACCEL_MOUNT_MATRIX` to the same turn.
+
 ## Fingerprint
 
 The reader is driven by Android's fingerprint HAL (`fps_hal`), which runs in the `bramble-android-hal` container. The phone's own libfprint has only the elan driver, and it does not drive this HAL, so stock fprintd cannot be used. The `bramble-fingerprint` package (`pmaports/device/downstream/bramble-fingerprint`) talks to the HAL over hwbinder. `bramble-fingerprint.sh` finds the container's logd, then runs the client in a private mount namespace where `/dev/hwbinder` is the container's binder node, so the host `/dev` is untouched. The templates are stored by the HAL in the container's `/data`; the client keeps its own state in `/var/lib/bramble-fingerprint` (root only).
