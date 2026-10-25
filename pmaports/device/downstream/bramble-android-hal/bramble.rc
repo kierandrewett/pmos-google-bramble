@@ -70,9 +70,11 @@ service vndservicemanager /vendor/bin/vndservicemanager /dev/vndbinder
     shutdown critical
 
 # The FPC HAL opens the sensor's irq node in sysfs, which is root-only.
+# It must start after qseecomd has registered its listeners, otherwise its
+# trusted-app session is stale and enrolment fails (see init.bramble.rc).
 service fps_hal /vendor/bin/hw/android.hardware.biometrics.fingerprint@2.2-service.fpc
     override
-    class late_start
+    disabled
     user root
     group system input uhid
 
@@ -88,5 +90,6 @@ service bramble_camera_proxy /system/bin/bramble-camera-proxy
 # It opens a camera only while a client is connected.
 service bramble_camera /system/bin/bramble-camera-ndk serve /mnt/bramble-camera/camera.sock
     class main
+    stdio_to_kmsg
     user root
     group root camera

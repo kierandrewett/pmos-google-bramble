@@ -1,16 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // bramble-camera-pipewire: offer the Pixel 4a (5G) cameras as PipeWire
-// camera nodes ("Back camera", "Front camera"), so camera apps such as GNOME
-// Snapshot find them through the camera portal.
+// camera nodes ("Back camera", "Ultrawide camera", "Front camera"), so camera
+// apps such as GNOME Snapshot find them through the camera portal.
 //
 // The frames come from the vendor camera HAL in the Android HAL container
 // (bramble-android-hal): bramble-camera-ndk serves them on a Unix socket and
 // opens a camera only while a client is connected. This bridge connects only
 // while a node is streaming, so the camera is off when no app uses it.
-// Frames arrive in sensor orientation (landscape) and are rotated to
-// portrait here.
+//
+// The nodes offer viewfinder and video sizes (landscape, 4:3). Frames are
+// passed through unrotated: each buffer carries a SPA_META_VideoTransform that
+// tells the application how the sensor is mounted (rotated 90 degrees on the
+// back cameras, 270 on the front). Frames are read from the socket straight
+// into the PipeWire buffer, with no intermediate copy. The ultrawide is the
+// logical rear camera zoomed out to its widest setting (zoom -1), which the
+// HAL serves from the ultrawide sensor.
+//
+// Photos: the HAL takes full-resolution stills with its own processing and
+// JPEG encoder in the streaming session. Apps ask for one on the control
+// socket $XDG_RUNTIME_DIR/bramble-camera.sock with the line
+// "capture <node-name> <rotation> <path>\n" (rotation: degrees the device is
+// turned clockwise from portrait); the bridge writes the JPEG to <path> and
+// answers "ok <width> <height>\n" or "error <reason>\n". The node must be
+// streaming. Snapshot uses this through a patch in temp/snapshot.
+//
+// The bridge waits for PipeWire at start and starts over if the connection to
+// PipeWire is lost, so it can be started before PipeWire.
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -26,30 +44,50 @@
 #include <unistd.h>
 
 #include <pipewire/pipewire.h>
-#include <spa/param/video/format-utils.h>
-#include <spa/param/buffers.h>
 #include <spa/buffer/meta.h>
+#include <spa/param/buffers.h>
+#include <spa/param/video/format-utils.h>
 #include <spa/pod/builder.h>
 
 #define SOCKET_PATH "/run/bramble-android/camera/camera.sock"
-#define FRAME_MAGIC 0x46435242u /* "BRCF" */
-
-// Size requested from the HAL, in sensor orientation (4:3).
-#define SENSOR_W 1440
-#define SENSOR_H 1080
+#define FRAME_MAGIC 0x46435242u /* "BRCF": NV12 frame */
+#define STILL_MAGIC 0x4a435242u /* "BRCJ": JPEG still */
 #define FPS 30
+#define SCRATCH_BYTES (64 * 1024)
+#define CONTROL_NAME "bramble-camera.sock"
+#define STILL_TIMEOUT_S 10
+
+#ifndef BACK_TRANSFORM
+#define BACK_TRANSFORM SPA_META_TRANSFORMATION_90
+#endif
+#ifndef FRONT_TRANSFORM
+#define FRONT_TRANSFORM SPA_META_TRANSFORMATION_270
+#endif
+
+// Viewfinder and video size offered to applications, landscape (sensor
+// orientation, 4:3). Photos do not depend on it: they come from the HAL at
+// full resolution. Measured with Snapshot: 1600x1200 keeps a 30 fps
+// viewfinder and records at 30 fps (software H.264); 2048x1536 records at
+// under 20 fps; at 1280x960 and 1440x1080 its viewfinder pipeline falls
+// behind and stops taking frames. Up to 1080p area the HAL also guarantees a
+// YUV stream next to a full-size JPEG output.
+static const int offered[][2] = {
+	{ 1600, 1200 },
+};
 
 struct camera {
 	const char *name;
 	const char *description;
-	const char *id;     // Android camera id
-	const char *location; // "back" or "front", for the viewfinder mirroring
-	int rotation;       // clockwise rotation to portrait: 90 or 270
-	int out_w, out_h;   // after rotation
+	const char *id;        // Android camera id
+	const char *zoom;      // zoom ratio requested from the HAL: "1.0", or "-1" for the widest
+	const char *location;  // "back" or "front", for the viewfinder mirroring
+	uint32_t transform;    // enum spa_meta_videotransform_value that makes the frame upright
+	int max_w, max_h;      // largest sensor size (landscape) offered
+
+	int w, h;              // frame size requested from the HAL and delivered (landscape)
 
 	struct pw_main_loop *loop;
 	struct pw_stream *stream;
-	struct spa_hook listener;
 	bool streaming;
 
 	int fd;
@@ -57,11 +95,21 @@ struct camera {
 	struct spa_source *retry;
 	uint8_t header[16];
 	size_t header_got;
-	uint8_t *raw;       // frame being received (sensor orientation)
-	size_t raw_size, raw_got;
-	uint8_t *frame;     // latest complete frame, rotated
-	bool frame_ready;
+	struct pw_buffer *pending;  // PipeWire buffer the current frame is read into
+	size_t payload;             // bytes of the current frame received so far
+	uint8_t *scratch;           // discards frames when no PipeWire buffer is free
 	uint64_t frame_count;
+	uint64_t dropped;
+
+	// Still capture in progress (control client waiting for the JPEG).
+	int still_client;           // control connection, or -1
+	char still_path[512];
+	uint8_t *still;             // JPEG being received
+	size_t still_size, still_got;
+	bool receiving_still;       // the current socket frame is a JPEG
+	struct spa_source *still_timer;
+	struct spa_source *reconnect;
+	struct spa_hook core_listener;
 };
 
 static void log_msg(const struct camera *c, const char *fmt, ...)
@@ -74,41 +122,76 @@ static void log_msg(const struct camera *c, const char *fmt, ...)
 	fputc('\n', stderr);
 }
 
-// Rotate an NV12 frame (w x h) clockwise by 90 or 270 degrees into dst
-// (h x w). The chroma plane holds interleaved UV pairs at half resolution.
-static void rotate_nv12(const uint8_t *src, uint8_t *dst, int w, int h, int rotation)
+static size_t frame_bytes(const struct camera *c)
 {
-	const int dw = h, dh = w;
-	for (int dy = 0; dy < dh; dy++) {
-		uint8_t *row = dst + (size_t)dy * dw;
-		if (rotation == 90) {
-			for (int dx = 0; dx < dw; dx++)
-				row[dx] = src[(size_t)(h - 1 - dx) * w + dy];
-		} else {
-			for (int dx = 0; dx < dw; dx++)
-				row[dx] = src[(size_t)dx * w + (w - 1 - dy)];
-		}
+	return (size_t)c->w * c->h * 3 / 2;
+}
+
+// Answer the control client waiting for a still and forget the capture.
+static void finish_still(struct camera *c, const char *fmt, ...)
+{
+	struct timespec zero = { 0 };
+	char reply[256];
+	va_list ap;
+
+	if (c->still_client < 0)
+		return;
+	va_start(ap, fmt);
+	vsnprintf(reply, sizeof(reply) - 1, fmt, ap);
+	va_end(ap);
+	strcat(reply, "\n");
+	if (write(c->still_client, reply, strlen(reply)) < 0)
+		log_msg(c, "control client went away");
+	close(c->still_client);
+	c->still_client = -1;
+	pw_loop_update_timer(pw_main_loop_get_loop(c->loop), c->still_timer, &zero, &zero, false);
+}
+
+// Write a received JPEG next to the requested path, then move it there, so
+// the app never sees a partial file.
+static void save_still(struct camera *c, uint32_t w, uint32_t h)
+{
+	char tmp[sizeof(c->still_path) + 8];
+	int fd;
+	bool ok = false;
+
+	if (c->still_client < 0) {
+		log_msg(c, "still without a request, dropped");
+		return;
 	}
-	const uint8_t *suv = src + (size_t)w * h;
-	uint8_t *duv = dst + (size_t)dw * dh;
-	const int cw = w / 2, ch = h / 2, dcw = dw / 2, dch = dh / 2;
-	for (int dy = 0; dy < dch; dy++) {
-		uint8_t *row = duv + (size_t)dy * dw;
-		for (int dx = 0; dx < dcw; dx++) {
-			const uint8_t *p;
-			if (rotation == 90)
-				p = suv + (size_t)(ch - 1 - dx) * w + 2 * dy;
-			else
-				p = suv + (size_t)dx * w + 2 * (cw - 1 - dy);
-			row[2 * dx] = p[0];
-			row[2 * dx + 1] = p[1];
-		}
+	snprintf(tmp, sizeof(tmp), "%s.part", c->still_path);
+	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+	if (fd >= 0) {
+		ok = write(fd, c->still, c->still_size) == (ssize_t)c->still_size;
+		ok = close(fd) == 0 && ok;
+		ok = ok && rename(tmp, c->still_path) == 0;
+		if (!ok)
+			unlink(tmp);
 	}
+	if (ok) {
+		log_msg(c, "photo %ux%u, %zu bytes: %s", w, h, c->still_size, c->still_path);
+		finish_still(c, "ok %u %u", w, h);
+	} else {
+		log_msg(c, "cannot write %s: %s", c->still_path, strerror(errno));
+		finish_still(c, "error cannot write the file");
+	}
+}
+
+static void on_still_timeout(void *data, uint64_t expirations)
+{
+	struct camera *c = data;
+	(void)expirations;
+	log_msg(c, "no photo from the camera within %d s", STILL_TIMEOUT_S);
+	finish_still(c, "error timeout");
 }
 
 static void disconnect_camera(struct camera *c)
 {
 	struct pw_loop *l = pw_main_loop_get_loop(c->loop);
+	// A frame cut short stays in c->pending and is overwritten by the next
+	// frame. It must not be queued: a buffer without a full picture (even
+	// with an empty chunk) makes some consumers read past its data, which
+	// crashes GTK's texture upload in Snapshot.
 	if (c->io) {
 		pw_loop_destroy_source(l, c->io);
 		c->io = NULL;
@@ -116,53 +199,124 @@ static void disconnect_camera(struct camera *c)
 	if (c->fd >= 0) {
 		close(c->fd);
 		c->fd = -1;
-		log_msg(c, "camera closed after %llu frames", (unsigned long long)c->frame_count);
+		log_msg(c, "camera closed after %llu frames, %llu dropped",
+			(unsigned long long)c->frame_count, (unsigned long long)c->dropped);
 	}
-	c->header_got = c->raw_got = 0;
+	free(c->still);
+	c->still = NULL;
+	c->receiving_still = false;
+	finish_still(c, "error camera closed");
+	c->header_got = c->payload = 0;
+}
+
+static void on_socket(void *data, int fd, uint32_t mask);
+
+// Hand a completed frame to the stream and wake the graph.
+static void finish_frame(struct camera *c)
+{
+	struct pw_buffer *b = c->pending;
+	struct spa_buffer *buf = b->buffer;
+	struct spa_meta_header *h;
+	struct spa_meta_videotransform *vt;
+	struct timespec now;
+
+	c->pending = NULL;
+	buf->datas[0].chunk->offset = 0;
+	buf->datas[0].chunk->size = frame_bytes(c);
+	buf->datas[0].chunk->stride = c->w;
+	if ((h = spa_buffer_find_meta_data(buf, SPA_META_Header, sizeof(*h)))) {
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		h->pts = SPA_TIMESPEC_TO_NSEC(&now);
+		h->flags = 0;
+		h->seq = c->frame_count;
+		h->dts_offset = 0;
+	}
+	if ((vt = spa_buffer_find_meta_data(buf, SPA_META_VideoTransform, sizeof(*vt))))
+		vt->transform = c->transform;
+	c->frame_count++;
+	pw_stream_queue_buffer(c->stream, b);
+	pw_stream_trigger_process(c->stream);
 }
 
 static void on_socket(void *data, int fd, uint32_t mask)
 {
 	struct camera *c = data;
+	const size_t size = frame_bytes(c);
+	ssize_t n = 0;
 
 	if (mask & (SPA_IO_ERR | SPA_IO_HUP)) {
 		log_msg(c, "camera service closed the connection");
 		disconnect_camera(c);
 		return;
 	}
-	ssize_t n;
-
 	for (;;) {
 		if (c->header_got < sizeof(c->header)) {
 			n = read(fd, c->header + c->header_got, sizeof(c->header) - c->header_got);
 			if (n <= 0)
-				goto out;
+				break;
 			c->header_got += n;
 			if (c->header_got < sizeof(c->header))
 				continue;
 			uint32_t h[4];
 			memcpy(h, c->header, sizeof(h));
-			if (h[0] != FRAME_MAGIC || h[1] != SENSOR_W || h[2] != SENSOR_H ||
-			    h[3] != (uint32_t)SENSOR_W * SENSOR_H * 3 / 2) {
+			if (h[0] == STILL_MAGIC && h[3] > 0 && h[3] <= 64u * 1024 * 1024) {
+				c->receiving_still = true;
+				c->still_size = h[3];
+				c->still_got = 0;
+				free(c->still);
+				c->still = malloc(c->still_size);
+				if (!c->still) {
+					log_msg(c, "no memory for a %u byte photo", h[3]);
+					disconnect_camera(c);
+					return;
+				}
+				continue;
+			}
+			if (h[0] != FRAME_MAGIC || h[1] != (uint32_t)c->w ||
+			    h[2] != (uint32_t)c->h || h[3] != size) {
 				log_msg(c, "unexpected frame %ux%u (%u bytes)", h[1], h[2], h[3]);
 				disconnect_camera(c);
 				return;
 			}
-			c->raw_got = 0;
+			c->payload = 0;
+			if (!c->pending)
+				c->pending = pw_stream_dequeue_buffer(c->stream);
+			if (!c->pending)
+				c->dropped++;
 		}
-		n = read(fd, c->raw + c->raw_got, c->raw_size - c->raw_got);
-		if (n <= 0)
-			goto out;
-		c->raw_got += n;
-		if (c->raw_got < c->raw_size)
+
+		if (c->receiving_still) {
+			n = read(fd, c->still + c->still_got, c->still_size - c->still_got);
+			if (n <= 0)
+				break;
+			c->still_got += n;
+			if (c->still_got < c->still_size)
+				continue;
+			uint32_t h[4];
+			memcpy(h, c->header, sizeof(h));
+			save_still(c, h[1], h[2]);
+			free(c->still);
+			c->still = NULL;
+			c->receiving_still = false;
+			c->header_got = 0;
 			continue;
-		rotate_nv12(c->raw, c->frame, SENSOR_W, SENSOR_H, c->rotation);
-		c->frame_ready = true;
-		c->frame_count++;
+		}
+
+		const size_t left = size - c->payload;
+		if (c->pending)
+			n = read(fd, c->pending->buffer->datas[0].data + c->payload, left);
+		else
+			n = read(fd, c->scratch, left < SCRATCH_BYTES ? left : SCRATCH_BYTES);
+		if (n <= 0)
+			break;
+		c->payload += n;
+		if (c->payload < size)
+			continue;
+
+		if (c->pending)
+			finish_frame(c);
 		c->header_got = 0;
-		pw_stream_trigger_process(c->stream);
 	}
-out:
 	if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
 		log_msg(c, "camera service connection lost");
 		disconnect_camera(c);
@@ -182,20 +336,19 @@ static bool connect_camera(struct camera *c)
 			close(fd);
 		return false;
 	}
-	// The ultrawide is reached by zooming out on the logical rear camera;
-	// 1.0 keeps the main camera.
-	snprintf(request, sizeof(request), "%s %d %d 1.0\n", c->id, SENSOR_W, SENSOR_H);
+	snprintf(request, sizeof(request), "%s %d %d %s\n", c->id, c->w, c->h, c->zoom);
 	if (write(fd, request, strlen(request)) != (ssize_t)strlen(request)) {
 		close(fd);
 		return false;
 	}
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 	c->fd = fd;
-	c->header_got = c->raw_got = 0;
+	c->header_got = c->payload = 0;
 	c->frame_count = 0;
+	c->dropped = 0;
 	c->io = pw_loop_add_io(pw_main_loop_get_loop(c->loop), fd,
 			       SPA_IO_IN | SPA_IO_ERR | SPA_IO_HUP, false, on_socket, c);
-	log_msg(c, "camera opened");
+	log_msg(c, "camera opened (zoom %s, %dx%d)", c->zoom, c->w, c->h);
 	return true;
 }
 
@@ -205,17 +358,23 @@ static void on_retry(void *data, uint64_t expirations)
 	struct camera *c = data;
 	struct timespec value = { 0 }, interval = { 0 };
 
-	if (!c->streaming || c->fd >= 0 || connect_camera(c)) {
+	if (!c->streaming || c->fd >= 0 || connect_camera(c))
 		pw_loop_update_timer(pw_main_loop_get_loop(c->loop), c->retry, &value, &interval, false);
-		return;
-	}
 }
 
+// Connect after a short delay, then retry every second until connected.
+// Apps often start streaming, stop and start again while they set up; the
+// delay keeps that from opening the camera twice, which is slow (the
+// camera service handles one client at a time, and the ultrawide takes
+// seconds to open).
 static void start_retry(struct camera *c)
 {
-	struct timespec value = { .tv_sec = 1 }, interval = { .tv_sec = 1 };
+	struct timespec value = { .tv_nsec = 300 * 1000 * 1000 }, interval = { .tv_sec = 1 };
 	pw_loop_update_timer(pw_main_loop_get_loop(c->loop), c->retry, &value, &interval, false);
 }
+
+// Set when the connection to PipeWire is lost: main() then starts over.
+static bool restart_wanted;
 
 static void on_state_changed(void *data, enum pw_stream_state old, enum pw_stream_state state,
 			     const char *error)
@@ -225,15 +384,84 @@ static void on_state_changed(void *data, enum pw_stream_state old, enum pw_strea
 	(void)old;
 	c->streaming = state == PW_STREAM_STATE_STREAMING;
 	if (c->streaming) {
-		if (c->fd < 0 && !connect_camera(c)) {
-			log_msg(c, "camera service not reachable yet, retrying");
+		if (c->fd < 0)
 			start_retry(c);
-		}
 	} else {
 		disconnect_camera(c);
 	}
 	if (error)
 		log_msg(c, "stream error: %s", error);
+	if (state == PW_STREAM_STATE_ERROR) {
+		// For example a failed format negotiation with one app: offer the
+		// camera again, after a moment, without touching the others.
+		struct timespec value = { .tv_sec = 1 }, interval = { 0 };
+		pw_loop_update_timer(pw_main_loop_get_loop(c->loop), c->reconnect, &value, &interval, false);
+	}
+}
+
+static const struct spa_pod *enum_format(struct spa_pod_builder *b, const struct camera *c);
+static int connect_stream(struct camera *c, const struct spa_pod **params);
+
+static void drop_core_listener(struct camera *c)
+{
+	if (c->core_listener.link.next) {
+		spa_hook_remove(&c->core_listener);
+		spa_zero(c->core_listener);
+	}
+}
+
+static void on_reconnect(void *data, uint64_t expirations)
+{
+	struct camera *c = data;
+	uint8_t buffer[1024];
+	struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+	const struct spa_pod *params[1];
+
+	(void)expirations;
+	log_msg(c, "offering the camera again");
+	disconnect_camera(c);
+	// A simple stream disconnects its core too, so drop the core listener.
+	drop_core_listener(c);
+	pw_stream_disconnect(c->stream);
+	params[0] = enum_format(&b, c);
+	if (connect_stream(c, params) < 0) {
+		restart_wanted = true;
+		pw_main_loop_quit(c->loop);
+	}
+}
+
+// The connection to PipeWire is gone (PipeWire restarted): start over.
+static void on_core_error(void *data, uint32_t id, int seq, int res, const char *message)
+{
+	struct camera *c = data;
+
+	(void)seq;
+	if (id != PW_ID_CORE || res != -EPIPE)
+		return;
+	log_msg(c, "PipeWire connection lost: %s", message);
+	restart_wanted = true;
+	pw_main_loop_quit(c->loop);
+}
+
+static const struct pw_core_events core_events = {
+	PW_VERSION_CORE_EVENTS,
+	.error = on_core_error,
+};
+
+// Connect the stream; its core exists only from then on, so listen to it
+// afterwards.
+static int connect_stream(struct camera *c, const struct spa_pod **params)
+{
+	struct pw_core *core;
+	int res;
+
+	res = pw_stream_connect(c->stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
+				PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_MAP_BUFFERS, params, 1);
+	if (res < 0)
+		return res;
+	if ((core = pw_stream_get_core(c->stream)) != NULL)
+		pw_core_add_listener(core, &c->core_listener, &core_events, c);
+	return 0;
 }
 
 static void on_param_changed(void *data, uint32_t id, const struct spa_pod *param)
@@ -241,65 +469,99 @@ static void on_param_changed(void *data, uint32_t id, const struct spa_pod *para
 	struct camera *c = data;
 	uint8_t buffer[1024];
 	struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
-	const struct spa_pod *params[2];
+	const struct spa_pod *params[3];
+	struct spa_video_info_raw info;
 
 	if (param == NULL || id != SPA_PARAM_Format)
 		return;
+	if (spa_format_video_raw_parse(param, &info) < 0)
+		return;
+
+	if ((int)info.size.width != c->w || (int)info.size.height != c->h) {
+		disconnect_camera(c);
+		c->w = info.size.width;
+		c->h = info.size.height;
+		if (c->streaming)
+			start_retry(c);
+	}
+	log_msg(c, "format %ux%u", c->w, c->h);
 
 	params[0] = spa_pod_builder_add_object(&b,
 		SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
-		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 2, 8),
+		// The viewfinder sink, queues and a video encoder each hold
+		// buffers while recording.
+		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, 16),
 		SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
-		SPA_PARAM_BUFFERS_size, SPA_POD_Int(c->out_w * c->out_h * 3 / 2),
-		SPA_PARAM_BUFFERS_stride, SPA_POD_Int(c->out_w),
+		SPA_PARAM_BUFFERS_size, SPA_POD_Int(frame_bytes(c)),
+		SPA_PARAM_BUFFERS_stride, SPA_POD_Int(c->w),
 		SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_MemPtr) | (1 << SPA_DATA_MemFd)));
 	params[1] = spa_pod_builder_add_object(&b,
 		SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
 		SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Header),
 		SPA_PARAM_META_size, SPA_POD_Int(sizeof(struct spa_meta_header)));
-	pw_stream_update_params(c->stream, params, 2);
+	params[2] = spa_pod_builder_add_object(&b,
+		SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+		SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoTransform),
+		SPA_PARAM_META_size, SPA_POD_Int(sizeof(struct spa_meta_videotransform)));
+	pw_stream_update_params(c->stream, params, 3);
 }
 
+// The frames are queued from on_socket; nothing to do when the graph runs.
 static void on_process(void *data)
 {
-	struct camera *c = data;
-	struct pw_buffer *b;
-	struct spa_buffer *buf;
-	struct spa_meta_header *h;
-	struct timespec now;
-	const size_t size = (size_t)c->out_w * c->out_h * 3 / 2;
+	(void)data;
+}
 
-	if (!c->frame_ready)
-		return;
-	b = pw_stream_dequeue_buffer(c->stream);
-	if (b == NULL)
-		return;
-	buf = b->buffer;
-	if (buf->datas[0].data == NULL || buf->datas[0].maxsize < size) {
-		pw_stream_queue_buffer(c->stream, b);
-		return;
-	}
-	memcpy(buf->datas[0].data, c->frame, size);
-	buf->datas[0].chunk->offset = 0;
-	buf->datas[0].chunk->size = size;
-	buf->datas[0].chunk->stride = c->out_w;
-	if ((h = spa_buffer_find_meta_data(buf, SPA_META_Header, sizeof(*h)))) {
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		h->pts = SPA_TIMESPEC_TO_NSEC(&now);
-		h->flags = 0;
-		h->seq = c->frame_count;
-		h->dts_offset = 0;
-	}
-	c->frame_ready = false;
-	pw_stream_queue_buffer(c->stream, b);
+// PipeWire frees the buffers on a format change; forget a held one.
+static void on_remove_buffer(void *data, struct pw_buffer *b)
+{
+	struct camera *c = data;
+
+	if (c->pending == b)
+		c->pending = NULL;
 }
 
 static const struct pw_stream_events stream_events = {
 	PW_VERSION_STREAM_EVENTS,
 	.state_changed = on_state_changed,
 	.param_changed = on_param_changed,
+	.remove_buffer = on_remove_buffer,
 	.process = on_process,
 };
+
+// EnumFormat: NV12 video at 30 fps, in each landscape size the camera offers.
+// An enum choice is the default value followed by all allowed values, so the
+// default (the largest size) appears twice. Without that, the default is not
+// among the allowed values, and with a single size there are none at all.
+static const struct spa_pod *enum_format(struct spa_pod_builder *b, const struct camera *c)
+{
+	struct spa_pod_frame obj, choice;
+	int def = -1;
+
+	for (size_t i = 0; i < SPA_N_ELEMENTS(offered); i++)
+		if (offered[i][0] <= c->max_w && offered[i][1] <= c->max_h)
+			def = i;
+
+	spa_pod_builder_push_object(b, &obj, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+	spa_pod_builder_prop(b, SPA_FORMAT_mediaType, 0);
+	spa_pod_builder_id(b, SPA_MEDIA_TYPE_video);
+	spa_pod_builder_prop(b, SPA_FORMAT_mediaSubtype, 0);
+	spa_pod_builder_id(b, SPA_MEDIA_SUBTYPE_raw);
+	spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_format, 0);
+	spa_pod_builder_id(b, SPA_VIDEO_FORMAT_NV12);
+	spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_size, 0);
+	spa_pod_builder_push_choice(b, &choice, SPA_CHOICE_Enum, 0);
+	spa_pod_builder_rectangle(b, offered[def][0], offered[def][1]);
+	for (size_t i = 0; i < SPA_N_ELEMENTS(offered); i++) {
+		if (offered[i][0] > c->max_w || offered[i][1] > c->max_h)
+			continue;
+		spa_pod_builder_rectangle(b, offered[i][0], offered[i][1]);
+	}
+	spa_pod_builder_pop(b, &choice);
+	spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_framerate, 0);
+	spa_pod_builder_fraction(b, FPS, 1);
+	return spa_pod_builder_pop(b, &obj);
+}
 
 static int setup_camera(struct camera *c, struct pw_main_loop *loop)
 {
@@ -310,14 +572,15 @@ static int setup_camera(struct camera *c, struct pw_main_loop *loop)
 
 	c->loop = loop;
 	c->fd = -1;
-	c->out_w = SENSOR_H;
-	c->out_h = SENSOR_W;
-	c->raw_size = (size_t)SENSOR_W * SENSOR_H * 3 / 2;
-	c->raw = malloc(c->raw_size);
-	c->frame = malloc(c->raw_size);
-	if (!c->raw || !c->frame)
+	c->still_client = -1;
+	c->w = offered[0][0];
+	c->h = offered[0][1];
+	c->scratch = malloc(SCRATCH_BYTES);
+	if (c->scratch == NULL)
 		return -ENOMEM;
 	c->retry = pw_loop_add_timer(pw_main_loop_get_loop(loop), on_retry, c);
+	c->still_timer = pw_loop_add_timer(pw_main_loop_get_loop(loop), on_still_timeout, c);
+	c->reconnect = pw_loop_add_timer(pw_main_loop_get_loop(loop), on_reconnect, c);
 
 	props = pw_properties_new(
 		PW_KEY_MEDIA_TYPE, "Video",
@@ -336,16 +599,122 @@ static int setup_camera(struct camera *c, struct pw_main_loop *loop)
 	if (c->stream == NULL)
 		return -errno;
 
-	params[0] = spa_pod_builder_add_object(&b,
-		SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
-		SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
-		SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
-		SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_NV12),
-		SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&SPA_RECTANGLE(c->out_w, c->out_h)),
-		SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&SPA_FRACTION(FPS, 1)));
+	params[0] = enum_format(&b, c);
+	return connect_stream(c, params);
+}
 
-	return pw_stream_connect(c->stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
-				 PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_MAP_BUFFERS, params, 1);
+static void free_camera(struct camera *c)
+{
+	struct pw_loop *l = pw_main_loop_get_loop(c->loop);
+
+	disconnect_camera(c);
+	if (c->stream) {
+		drop_core_listener(c);
+		pw_stream_destroy(c->stream);
+	}
+	if (c->retry)
+		pw_loop_destroy_source(l, c->retry);
+	if (c->still_timer)
+		pw_loop_destroy_source(l, c->still_timer);
+	if (c->reconnect)
+		pw_loop_destroy_source(l, c->reconnect);
+	free(c->scratch);
+	c->stream = NULL;
+	c->retry = c->still_timer = c->reconnect = NULL;
+	c->scratch = NULL;
+}
+
+// Control socket: "capture <node-name> <rotation> <path>\n".
+struct control {
+	struct camera *cameras;
+	size_t n_cameras;
+	struct pw_main_loop *loop;
+	int fd;
+	struct spa_source *io;
+};
+
+static void handle_request(struct control *ctl, int client, char *line)
+{
+	char node[64], path[512];
+	int rotation;
+	struct camera *c = NULL;
+	struct timespec value = { .tv_sec = STILL_TIMEOUT_S }, interval = { 0 };
+	char cmd[32];
+
+	if (sscanf(line, "capture %63s %d %511[^\n]", node, &rotation, path) != 3) {
+		dprintf(client, "error bad request\n");
+		close(client);
+		return;
+	}
+	for (size_t i = 0; i < ctl->n_cameras; i++)
+		if (!strcmp(ctl->cameras[i].name, node))
+			c = &ctl->cameras[i];
+	if (c == NULL || c->fd < 0 || path[0] != '/') {
+		dprintf(client, "error %s\n", c == NULL ? "unknown camera" :
+			c->fd < 0 ? "camera not streaming" : "path must be absolute");
+		close(client);
+		return;
+	}
+	if (c->still_client >= 0) {
+		dprintf(client, "error busy\n");
+		close(client);
+		return;
+	}
+	rotation = ((rotation % 360) + 360) % 360;
+	snprintf(cmd, sizeof(cmd), "capture %d\n", rotation);
+	if (write(c->fd, cmd, strlen(cmd)) != (ssize_t)strlen(cmd)) {
+		dprintf(client, "error camera service\n");
+		close(client);
+		return;
+	}
+	c->still_client = client;
+	snprintf(c->still_path, sizeof(c->still_path), "%s", path);
+	pw_loop_update_timer(pw_main_loop_get_loop(c->loop), c->still_timer, &value, &interval, false);
+	log_msg(c, "photo requested (rotation %d)", rotation);
+}
+
+static void on_control(void *data, int fd, uint32_t mask)
+{
+	struct control *ctl = data;
+	char line[640];
+	size_t n = 0;
+	int client;
+
+	(void)mask;
+	client = accept4(fd, NULL, NULL, SOCK_CLOEXEC);
+	if (client < 0)
+		return;
+	// One short line from a local client; give it a second to arrive.
+	struct timeval tv = { .tv_sec = 1 };
+	setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	while (n + 1 < sizeof(line)) {
+		ssize_t r = read(client, line + n, 1);
+		if (r <= 0 || line[n] == '\n')
+			break;
+		n++;
+	}
+	line[n] = 0;
+	handle_request(ctl, client, line);
+}
+
+static int setup_control(struct control *ctl)
+{
+	struct sockaddr_un addr = { .sun_family = AF_UNIX };
+	const char *dir = getenv("XDG_RUNTIME_DIR");
+
+	ctl->fd = -1;
+	if (dir == NULL)
+		return -ENOENT;
+	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/%s", dir, CONTROL_NAME);
+	unlink(addr.sun_path);
+	ctl->fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (ctl->fd < 0 || bind(ctl->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
+	    listen(ctl->fd, 4) < 0)
+		return -errno;
+	// XDG_RUNTIME_DIR is private to the user, which limits the socket too.
+	ctl->io = pw_loop_add_io(pw_main_loop_get_loop(ctl->loop), ctl->fd, SPA_IO_IN, false,
+				 on_control, ctl);
+	return 0;
 }
 
 static void on_signal(void *data, int sig)
@@ -354,38 +723,69 @@ static void on_signal(void *data, int sig)
 	pw_main_loop_quit(data);
 }
 
-int main(int argc, char *argv[])
+// Offer the cameras until a signal arrives (returns 0) or the connection to
+// PipeWire fails or is lost (returns -1).
+static int run(void)
 {
 	struct camera cameras[] = {
-		{ .name = "bramble-camera-back", .description = "Back camera", .id = "0", .location = "back", .rotation = 90 },
-		{ .name = "bramble-camera-front", .description = "Front camera", .id = "1", .location = "front", .rotation = 270 },
+		{ .name = "bramble-camera-back", .description = "Back camera", .id = "0",
+		  .zoom = "1.0", .location = "back", .transform = BACK_TRANSFORM,
+		  .max_w = 4032, .max_h = 3024 },
+		{ .name = "bramble-camera-wide", .description = "Ultrawide camera", .id = "0",
+		  .zoom = "-1", .location = "back", .transform = BACK_TRANSFORM,
+		  .max_w = 4032, .max_h = 3024 },
+		{ .name = "bramble-camera-front", .description = "Front camera", .id = "1",
+		  .zoom = "1.0", .location = "front", .transform = FRONT_TRANSFORM,
+		  .max_w = 3264, .max_h = 2448 },
 	};
+	struct control ctl = { .cameras = cameras, .n_cameras = SPA_N_ELEMENTS(cameras), .fd = -1 };
 	struct pw_main_loop *loop;
-	int res;
+	int res = 0;
 
-	pw_init(&argc, &argv);
 	loop = pw_main_loop_new(NULL);
-	if (loop == NULL) {
-		fprintf(stderr, "[bramble-camera] cannot create PipeWire loop\n");
-		return 1;
-	}
+	if (loop == NULL)
+		return -1;
+	ctl.loop = loop;
 	pw_loop_add_signal(pw_main_loop_get_loop(loop), SIGINT, on_signal, loop);
 	pw_loop_add_signal(pw_main_loop_get_loop(loop), SIGTERM, on_signal, loop);
 
+	restart_wanted = false;
 	for (size_t i = 0; i < SPA_N_ELEMENTS(cameras); i++) {
 		if ((res = setup_camera(&cameras[i], loop)) < 0) {
 			fprintf(stderr, "[bramble-camera] %s: cannot create stream: %s\n",
 				cameras[i].name, strerror(-res));
-			return 1;
+			restart_wanted = true;
+			break;
 		}
 	}
-	pw_main_loop_run(loop);
-
-	for (size_t i = 0; i < SPA_N_ELEMENTS(cameras); i++) {
-		disconnect_camera(&cameras[i]);
-		pw_stream_destroy(cameras[i].stream);
+	if (!restart_wanted) {
+		if ((res = setup_control(&ctl)) < 0)
+			fprintf(stderr, "[bramble-camera] no control socket, photos come from the app: %s\n",
+				strerror(-res));
+		fprintf(stderr, "[bramble-camera] cameras offered\n");
+		pw_main_loop_run(loop);
 	}
+
+	for (size_t i = 0; i < SPA_N_ELEMENTS(cameras); i++)
+		if (cameras[i].loop)
+			free_camera(&cameras[i]);
+	if (ctl.io)
+		pw_loop_destroy_source(pw_main_loop_get_loop(loop), ctl.io);
+	if (ctl.fd >= 0)
+		close(ctl.fd);
 	pw_main_loop_destroy(loop);
+	return restart_wanted ? -1 : 0;
+}
+
+int main(int argc, char *argv[])
+{
+	pw_init(&argc, &argv);
+	// gnome-session may start this before PipeWire, and PipeWire may
+	// restart: try again every two seconds.
+	while (run() < 0) {
+		fprintf(stderr, "[bramble-camera] no PipeWire connection, trying again\n");
+		sleep(2);
+	}
 	pw_deinit();
 	return 0;
 }
