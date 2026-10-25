@@ -1,0 +1,39 @@
+#!/sbin/openrc-run
+# On Android, keystore2 runs the keymaster HMAC key agreement
+# (computeSharedHmac) at boot. Auth tokens from gatekeeper are signed with
+# that key, and the fingerprint trusted app checks the token when it stores
+# a new fingerprint. The container has no keystore2, so do the agreement
+# here, then restart the fingerprint HAL so it opens its trusted app with
+# the key in place.
+
+name="Fingerprint key setup"
+description="Keymaster HMAC key agreement for the fingerprint HAL"
+
+depend() {
+	need bramble-android
+}
+
+# Run a shell command inside the Android container.
+_android_sh() {
+	local init logd
+	init=$(cat /run/bramble-android/init.pid 2> /dev/null) || return 1
+	logd=$(ps -o pid,ppid,comm | awk -v p="$init" '$2==p && $3=="logd" {print $1}')
+	[ -n "$logd" ] || return 1
+	nsenter -t "$logd" -m -p /system/bin/sh -c "PATH=/system/bin:/vendor/bin; $1"
+}
+
+start() {
+	ebegin "Sharing the keymaster HMAC key"
+	# keymaster starts some seconds after the container.
+	local i=0
+	until /usr/bin/bramble-fingerprint hmac-share > /dev/null 2>&1; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			eend 1 "keymaster did not answer"
+			return 1
+		fi
+		sleep 2
+	done
+	_android_sh "setprop ctl.restart fps_hal"
+	eend $?
+}

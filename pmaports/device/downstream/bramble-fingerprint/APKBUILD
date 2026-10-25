@@ -1,0 +1,50 @@
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+# Enrol, verify and manage fingerprints through the fps_hal that runs in the
+# bramble-android-hal container. The HIDL client talks to the container's
+# hwbinder node; the enrolled templates live in the container's /data.
+pkgname=bramble-fingerprint
+pkgver=1
+pkgrel=2
+pkgdesc="Google Pixel 4a (5G): fingerprint enrol/verify/list/remove via the Android HAL"
+url="https://github.com/kierandrewett/pmos-google-bramble"
+arch="aarch64"
+license="GPL-3.0-or-later"
+depends="
+	bramble-android-hal
+	libgbinder
+	libglibutil
+	"
+makedepends="glib-dev libgbinder-dev"
+# !tracedeps: the client links against libgbinder, which is only a host library.
+options="!check !strip !tracedeps"
+builddir="$srcdir"
+subpackages="$pkgname-openrc"
+install="$pkgname-openrc.post-install"
+source="
+	bramble-fingerprint.initd
+	bramble-fingerprint.sh
+	fp-enroll-verify.c
+	"
+
+build() {
+	${CC:-cc} $CFLAGS -Wall -Wextra -o bramble-fingerprint fp-enroll-verify.c \
+		$(pkg-config --cflags --libs libgbinder glib-2.0 gobject-2.0) $LDFLAGS
+}
+
+package() {
+	install -Dm755 "$srcdir"/bramble-fingerprint "$pkgdir"/usr/libexec/bramble-fingerprint
+	install -Dm755 "$srcdir"/bramble-fingerprint.sh "$pkgdir"/usr/bin/bramble-fingerprint
+}
+
+openrc() {
+	pkgdesc="Google Pixel 4a (5G): fingerprint key setup at boot (OpenRC)"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	depends="bramble-android-hal-openrc"
+
+	install -Dm755 "$srcdir"/bramble-fingerprint.initd "$subpkgdir"/etc/init.d/bramble-fingerprint
+}
+sha512sums="
+5d168e0b78251e15696fede703e3e8874449ae8161f32e5499ef92e6381b0954b571e1e9904117f0f1aa2882154a941d07b9db7c380277f68c44b6688560efad  bramble-fingerprint.initd
+b5409d71687482d2f538ea077061e4c78b0f984a73d44d85d9e9c2053cb00faf0d7f32d99aa9694461f7d420c3b7c869ac3734cbf34f934d5eb8754016354b65  bramble-fingerprint.sh
+3ec962ff53830ca3cac3675929b99a72fec9c6f2ae7c6552a23d0292119f0936c9225d6cf75be4013e13a3edc92700163ab45d1829e40ab6d47585455a5a2e6f  fp-enroll-verify.c
+"
