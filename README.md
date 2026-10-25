@@ -14,7 +14,7 @@ repositories. Expect rough edges. It is not the Pixel 4a (`sunfish`).
 |---|---|---|
 | Display, touch, Phosh | Suspend (not verified unplugged) | Voice calls (not tested) |
 | GPU acceleration (60 fps) | Sensors (auto-rotate not confirmed) | |
-| Cameras: back, ultrawide, front; photos and video | Fingerprint reader (enrolment fails at the last touch) | |
+| Cameras: back, ultrawide, front; photos and video | Fingerprint reader (enrol and verify work; unlock with a finger not yet seen on the phone) | |
 | Wi-Fi, Bluetooth | | |
 | Mobile data (LTE), SMS, GPS | | |
 | Speakers, microphone, headphones | | |

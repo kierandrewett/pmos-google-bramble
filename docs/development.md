@@ -16,7 +16,7 @@ in the same directory layout, plus docs and scripts. The git history of
 | `pmaports/device/downstream/device-google-bramble/` | Device package: deviceinfo, udev rules, ALSA UCM, OpenRC services for the modem, firmware, GNSS (`bramble-gnss`) and UI boost (`bramble-ui-boost`), environment for phoc, `libfix_drm_formats.so`; the `-pipewire` subpackage has the WirePlumber config and the speaker filter. |
 | `pmaports/device/downstream/linux-google-bramble/` | Downstream 4.19 kernel: config and patches `0001`-`0025`. |
 | `pmaports/device/downstream/bramble-android-hal/` | Android vendor HAL container (Halium 14 system image from `pmaports/main/halium-gsi-34/`): runs the camera and fingerprint HALs; the PipeWire camera bridge for camera apps. The prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` are built from `tools/android-helpers/` with the Android NDK (`tools/android-helpers/build.sh`). |
-| `pmaports/device/downstream/bramble-fingerprint/` | `bramble-fingerprint` client for the fingerprint HAL (enrol, verify, list, remove). |
+| `pmaports/device/downstream/bramble-fingerprint/` | `bramble-fingerprint` client for the fingerprint HAL (enrol, verify, list, remove), and `bramble-fingerprint-unlock`, the service that unlocks the lock screen with a finger. |
 | `pmaports/device/downstream/bramble-sensors/` | Sensors DSP service (Hexagon FS through `hexagonrpcd`), udev tags for iio-sensor-proxy, `bramble-sensors-demo`. |
 | `pmaports/main/qrtr-ns/`, `pd-mapper/` | QRTR name service and protection domain mapper for kernels without in-kernel QRTR NS / remoteproc. |
 | `pmaports/main/mesa-vulkan-freedreno-kgsl/` | Mesa turnip (Vulkan) for the downstream KGSL GPU driver. |
@@ -83,6 +83,24 @@ network address; `/etc/conf.d/adbd` explains how to change that and the
 risk. scrcpy needs the screen on (it mirrors what phoc draws) and sends
 touch and keys back through uinput. The server encodes in software
 (x264), so it uses most of one CPU core while mirroring.
+
+### Fingerprint
+
+Enrol and check fingers from a root shell on the phone, with the phone
+unlocked (the unlock service only uses the reader while the lock screen is
+showing):
+
+```sh
+sudo bramble-fingerprint enroll    # touch the reader about eight times
+sudo bramble-fingerprint verify    # touch an enrolled finger: "verify OK"
+sudo bramble-fingerprint list
+sudo bramble-fingerprint remove --fid <id from list>
+```
+
+Each command takes over the reader, so do not start a second one while
+`enroll` is waiting for touches; that cancels the enrol. The reader is on
+the back, below the camera. The log of the unlock service is
+`/var/log/bramble-fingerprint-unlock.log` (root only).
 
 ### Kernel changes
 

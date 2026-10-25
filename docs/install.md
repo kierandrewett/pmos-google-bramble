@@ -101,6 +101,15 @@ with the password from step 4, then connect to Wi-Fi from the top bar.
   `ssh user@172.16.42.1`.
 - File transfer: switch the USB mode to MTP, then the phone appears in your
   file manager. See [status.md](status.md).
+- adb and screen mirroring from a PC: `adb devices` and `scrcpy` work over
+  the same USB cable. See [development.md](development.md).
+- Camera: open "Camera" (GNOME Snapshot). The back, ultrawide and front
+  cameras are in its camera list. See [camera.md](camera.md).
+- Fingerprint: enrol a finger once, with the phone unlocked:
+  `sudo bramble-fingerprint enroll`, and touch the reader on the back about
+  eight times. The unlock service then lets that finger unlock the lock
+  screen; the PIN keeps working. See [development.md](development.md) and
+  [status.md](status.md) for what has been tested.
 - Updating: these packages are not in the postmarketOS binary repository.
   Rebuild them with pmbootstrap and install them on the phone with
   `pmbootstrap sideload <package>`. A new kernel also has to be flashed

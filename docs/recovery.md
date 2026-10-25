@@ -6,7 +6,10 @@ The factory image restores every Google-signed partition, but not the
 partitions that are unique to your phone: modem calibration and IMEI
 (`modemst1`, `modemst2`, `fsg`, `fsc`), `persist` (Wi-Fi, sensor and
 display calibration) and a few others. postmarketOS does not write to them,
-but keep a copy anyway.
+with one exception: the Android container writes the fingerprint reader's
+secure storage to `persist` once you enrol a finger (see
+[porting-notes.md](porting-notes.md), "Fingerprint"). Keep a copy of all of
+them anyway.
 
 You need root on the phone to read them. The simplest way is a temporary
 root shell from a custom recovery (for example LineageOS recovery booted
