@@ -37,6 +37,13 @@ server. `adb shell` runs as the default user with the `input` group.
 There is no key authentication, so TCP 5555 is bound to the USB network
 address only.
 
+The gadget is called `g1` at boot. `usb-signaller` replaces it with a new
+one (`usb-signaller-developer`, and so on) at every mode switch, which has
+no adb function, so the init script finds the gadget by looking in
+configfs instead of using a fixed name, and a mode switch needs
+`rc-service adbd restart` to bring adb back. `usb-signaller` does not know
+the adb function, so it reports `unknown_mode` at boot.
+
 scrcpy: the PC client pushes its Java server and runs it with
 `app_process`. `temp/scrcpy-server` installs `/usr/bin/app_process` as a
 shim that starts a native server instead. It speaks the scrcpy 4.x

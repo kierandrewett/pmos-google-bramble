@@ -17,7 +17,7 @@ the [hardware notes](hardware/README.md).
 | Speakers, internal microphone | Playback and recording through PulseAudio and PipeWire; a test tone heard in a Phosh session; speaker level measured with a microphone | Speaker protection DSP is bypassed; amp gain and volume are the stock values. With PipeWire, a speaker-only limiter makes the speaker 4-6 dB louder from 40 % volume up (device-google-bramble-pipewire). |
 | Headphones, with automatic switching (PipeWire) | Plugging in and unplugging headphones moves playback between headphones and speaker without user action; tone heard in each | With PulseAudio the ports are detected but playback does not switch, see "Audio server" below. |
 | Battery and charging | Charge level and charging state in Phosh | |
-| USB networking (SSH) and MTP | `ssh user@172.16.42.1`; files copied over MTP | Mode is chosen with `usb-signaller`. |
+| USB networking (SSH) and MTP | `ssh user@172.16.42.1`; files copied over MTP. With `adbd` running, `set_mode mtp_ffs_mode` made the PC list the phone's storage ("Home") and `set_mode developer_mode` brought SSH over USB back | Mode is chosen with `usb-signaller` over D-Bus, see [usage.md](guides/usage.md). A mode switch drops adb: see Known problems. |
 | Vibration | `fbcli -E phone-incoming-call` vibrates | feedbackd uses the DRV2624 force-feedback device. |
 | Torch | Phosh quick setting turns the LED on and off | Shows "off" at boot. |
 | Tap to wake | With the screen off, a tap turns it on, and a quick second tap does not turn it off again (checked by hand on kernel r35: the screen stays on, and the kernel log has one "waking the screen" per wake) | The touch controller keeps scanning while the screen is off. One tap is enough since patch 0021; `tap_wake_taps` selects 1 or 2 taps. Patch 0025 sends the power key once per screen off, because Phosh treats it as a toggle. |
@@ -83,3 +83,10 @@ the [hardware notes](hardware/README.md).
   so some sites load slowly or not at all (DuckDuckGo). Captures on the
   phone show that the large packets never arrive; the cause is most
   likely the SIM's network, not the port.
+- `usb-signaller` replaces the USB gadget at every mode switch, and the new
+  gadget has no adb function, so after a switch adb is gone until
+  `sudo rc-service adbd restart` (checked: after developer mode, `adb
+  devices` was empty; after the restart it listed the phone, and SSH over
+  USB kept working). `usb-signaller` also does not know the adb function:
+  at boot it reports `unknown_mode`, and started by hand it prints "Cannot
+  determine mode for gadget function ffs.adb". Switching modes still works.
