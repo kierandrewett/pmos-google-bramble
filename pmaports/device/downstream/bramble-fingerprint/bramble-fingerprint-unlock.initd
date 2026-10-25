@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+# Unlock the Phosh lock screen with an enrolled fingerprint (see
+# /usr/libexec/bramble-fingerprint-unlock). Turn it off with
+# "rc-update del bramble-fingerprint-unlock default".
+
+name="Fingerprint unlock"
+description="Unlock the lock screen with an enrolled fingerprint"
+
+command=/usr/libexec/bramble-fingerprint-unlock
+supervisor=supervise-daemon
+respawn_delay=5
+output_log="/var/log/bramble-fingerprint-unlock.log"
+error_log="/var/log/bramble-fingerprint-unlock.log"
+
+depend() {
+	need bramble-fingerprint elogind
+}

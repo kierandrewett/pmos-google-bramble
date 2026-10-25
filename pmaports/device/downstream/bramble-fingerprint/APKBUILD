@@ -4,7 +4,7 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 # hwbinder node; the enrolled templates live in the container's /data.
 pkgname=bramble-fingerprint
 pkgver=1
-pkgrel=4
+pkgrel=5
 pkgdesc="Google Pixel 4a (5G): fingerprint enrol/verify/list/remove via the Android HAL"
 url="https://github.com/kierandrewett/pmos-google-bramble"
 arch="aarch64"
@@ -20,8 +20,10 @@ options="!check !strip !tracedeps"
 builddir="$srcdir"
 subpackages="$pkgname-openrc"
 install_if="device-google-bramble"
-install="$pkgname-openrc.post-install"
+install="$pkgname-openrc.post-install $pkgname-openrc.post-upgrade"
 source="
+	bramble-fingerprint-unlock.initd
+	bramble-fingerprint-unlock.sh
 	bramble-fingerprint.initd
 	bramble-fingerprint.sh
 	fp-enroll-verify.c
@@ -35,16 +37,21 @@ build() {
 package() {
 	install -Dm755 "$srcdir"/bramble-fingerprint "$pkgdir"/usr/libexec/bramble-fingerprint
 	install -Dm755 "$srcdir"/bramble-fingerprint.sh "$pkgdir"/usr/bin/bramble-fingerprint
+	install -Dm755 "$srcdir"/bramble-fingerprint-unlock.sh "$pkgdir"/usr/libexec/bramble-fingerprint-unlock
 }
 
 openrc() {
 	pkgdesc="Google Pixel 4a (5G): fingerprint key setup at boot (OpenRC)"
 	install_if="$pkgname=$pkgver-r$pkgrel openrc"
-	depends="bramble-android-hal-openrc"
+	depends="bramble-android-hal-openrc elogind glib setpriv"
 
 	install -Dm755 "$srcdir"/bramble-fingerprint.initd "$subpkgdir"/etc/init.d/bramble-fingerprint
+	install -Dm755 "$srcdir"/bramble-fingerprint-unlock.initd \
+		"$subpkgdir"/etc/init.d/bramble-fingerprint-unlock
 }
 sha512sums="
+58a66188354e259a4dd6e9821592ec55697103a56e0d1b206a6502c653bad547584f5da311083f52b1634b0bee496f382a381d201d5004eba02816a8f214d5f5  bramble-fingerprint-unlock.initd
+a2bf789c965db61a8e19a867376186f5e91dfd00a790be02a658af2e18c5c863ef1e26a89d97edc916b1320b8b3eab62085fe4000213de075592b17fa4e54197  bramble-fingerprint-unlock.sh
 5d168e0b78251e15696fede703e3e8874449ae8161f32e5499ef92e6381b0954b571e1e9904117f0f1aa2882154a941d07b9db7c380277f68c44b6688560efad  bramble-fingerprint.initd
 b5409d71687482d2f538ea077061e4c78b0f984a73d44d85d9e9c2053cb00faf0d7f32d99aa9694461f7d420c3b7c869ac3734cbf34f934d5eb8754016354b65  bramble-fingerprint.sh
 3c07c66bcb5cff48277801b3a49822c21fbe56d44906ebcc441a1106ac1d5d73c546014e1b01754879c228d1f2315e234501209a2af89c97dc8fc0844f13bf2f  fp-enroll-verify.c
