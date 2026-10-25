@@ -34,6 +34,6 @@ export QT_QPA_PLATFORM=wayland
 
 # Auto-mount POSIX shared memory if missing
 if [ ! -d /dev/shm ] || ! mountpoint -q /dev/shm; then
-    mkdir -p /dev/shm
-    mount -t tmpfs tmpfs /dev/shm -o rw,nosuid,nodev,mode=1777 2>/dev/null || true
+	mkdir -p /dev/shm
+	mount -t tmpfs tmpfs /dev/shm -o rw,nosuid,nodev,mode=1777 2>/dev/null || true
 fi

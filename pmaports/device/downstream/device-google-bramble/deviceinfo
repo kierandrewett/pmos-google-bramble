@@ -1,4 +1,4 @@
-# Reference: <https://postmarketos.org/deviceinfo>
+# Reference: <https://nura.eco/deviceinfo>
 # Please use double quotes only. You can source this file in shell
 # scripts.
 
@@ -12,9 +12,6 @@ deviceinfo_chassis="handset"
 deviceinfo_drm="true"
 deviceinfo_screen_width="1080"
 deviceinfo_screen_height="2340"
-
-# Downstream kernel
-deviceinfo_kernel_source="downstream"
 
 # Bootloader: boot image header v3, so the DTB, initramfs and cmdline go
 # into vendor_boot. Addresses match the stock UP1A.231105.001.B2 images.
