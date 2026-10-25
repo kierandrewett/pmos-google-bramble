@@ -20,7 +20,7 @@
  *
  * Options: --hwbinder DEV (default /dev/hwbinder), --state DIR (default
  *          /var/lib/bramble-fingerprint), --store PATH (fingerprint data dir passed to
- *          setActiveGroup, default /data/vendor_de/0/fpdata/).
+ *          setActiveGroup, default /data/vendor_de/0/fpdata; no trailing slash, as AOSP's FingerprintService).
  *
  * Build (libgbinder-devel + glib2-devel):
  *   cc -Wall -Wextra -o fp-enroll-verify fp-enroll-verify.c \
@@ -80,7 +80,7 @@ enum {
 
 static const char* opt_hwbinder = GBINDER_DEFAULT_HWBINDER;
 static const char* opt_state = "/var/lib/bramble-fingerprint";
-static const char* opt_store = "/data/vendor_de/0/fpdata/";
+static const char* opt_store = "/data/vendor_de/0/fpdata";
 static guint opt_gid = 0;
 static guint opt_fid = 0;
 static guint opt_timeout = 0;   /* 0: per-command default (enrol 180 s, others 60 s) */

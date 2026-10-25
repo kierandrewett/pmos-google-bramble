@@ -4,7 +4,7 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 # hwbinder node; the enrolled templates live in the container's /data.
 pkgname=bramble-fingerprint
 pkgver=1
-pkgrel=2
+pkgrel=4
 pkgdesc="Google Pixel 4a (5G): fingerprint enrol/verify/list/remove via the Android HAL"
 url="https://github.com/kierandrewett/pmos-google-bramble"
 arch="aarch64"
@@ -19,6 +19,7 @@ makedepends="glib-dev libgbinder-dev"
 options="!check !strip !tracedeps"
 builddir="$srcdir"
 subpackages="$pkgname-openrc"
+install_if="device-google-bramble"
 install="$pkgname-openrc.post-install"
 source="
 	bramble-fingerprint.initd
@@ -46,5 +47,5 @@ openrc() {
 sha512sums="
 5d168e0b78251e15696fede703e3e8874449ae8161f32e5499ef92e6381b0954b571e1e9904117f0f1aa2882154a941d07b9db7c380277f68c44b6688560efad  bramble-fingerprint.initd
 b5409d71687482d2f538ea077061e4c78b0f984a73d44d85d9e9c2053cb00faf0d7f32d99aa9694461f7d420c3b7c869ac3734cbf34f934d5eb8754016354b65  bramble-fingerprint.sh
-3ec962ff53830ca3cac3675929b99a72fec9c6f2ae7c6552a23d0292119f0936c9225d6cf75be4013e13a3edc92700163ab45d1829e40ab6d47585455a5a2e6f  fp-enroll-verify.c
+3c07c66bcb5cff48277801b3a49822c21fbe56d44906ebcc441a1106ac1d5d73c546014e1b01754879c228d1f2315e234501209a2af89c97dc8fc0844f13bf2f  fp-enroll-verify.c
 "
