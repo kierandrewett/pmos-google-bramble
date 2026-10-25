@@ -18,7 +18,7 @@ repositories. Expect rough edges. It is not the Pixel 4a (`sunfish`).
 | Mobile data (LTE), SMS, GPS | | |
 | Speakers, microphone, headphones | | Fingerprint reader |
 | Battery and charging | | |
-| USB networking (SSH), MTP file transfer | | |
+| USB networking (SSH), MTP file transfer, adb, scrcpy | | |
 | Vibration, torch, tap to wake | | |
 
 Details, known problems and test notes: [docs/status.md](docs/status.md).

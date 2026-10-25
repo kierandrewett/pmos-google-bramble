@@ -24,6 +24,7 @@ was checked; the technical background is in
 | Screen fade | Power button: the screen fades out and in (filmed with a camera, checked by hand) | Patched phoc in `temp/phoc`; upstream Phosh switches instantly. |
 | Bluetooth | Scans LE and BR/EDR devices. In Settings, with a Linux PC as the other device: paired (the codes on both sides matched), connected, switched off and on (the phone reconnected), forgot the device. A2DP audio from a Phosh session recorded on the PC (660 Hz at -23 dBFS received at -23.0 dBFS). The PC sees the phone under its own address | WCN3991 with the in-kernel hci_qca driver (patches 0008, 0010, 0017, 0020, 0022). Each phone gets its own address from its serial number (bootmac). The controller does not use in-band sleep, so it uses some power while Bluetooth is on. Playback moves to a Bluetooth device by itself only after it was chosen once as the output, for example in Settings, Sound: WirePlumber keeps a chosen output and then switches to it on every connect. |
 | GPS | Indoors at night: ModemManager gets NMEA with 11-13 satellites in view, and a position fix after about 11 s in one test; geoclue reports "GPS GGA" positions | The modem's GNSS engine through ModemManager's QMI location support. `bramble-gnss` undoes an engine lock that ModemManager sets and that blocks it on this firmware, and gives the engine the time once the clock is synced. Apps get a position only when Location is switched on in Settings (it is off by default). |
+| adb and screen mirroring | From a Linux PC: `adb devices` lists the phone over USB, `adb connect 172.16.42.1:5555` works over the USB network, `adb shell` gives the default user; SSH over USB keeps working beside adb. Stock `scrcpy` 4.1 mirrors the screen (540x1170 H.264, about 24 fps over USB) and a mouse click in its window taps the phone | `temp/adbd` (AOSP adbd, standalone Linux build) and `temp/scrcpy-server` (native server behind an `app_process` shim). adbd has no key authentication, so TCP listens on the USB network address only. The server encodes in software and uses most of one CPU core while mirroring. |
 
 ## Partly works
 
@@ -32,6 +33,7 @@ was checked; the technical background is in
 | Audio server | PipeWire (answer `pipewire` for `postmarketos-base-ui-audio-backend` in `pmbootstrap init`) is the recommended backend: it plays, records and switches to headphones. PulseAudio (the postmarketOS default) plays and records, but does not move audio to headphones on plug-in: callaudiod unloads `module-switch-on-port-available` and only switches ports inside one sink, while the UCM profile puts speaker and headphones in separate profiles. |
 | Suspend | Not verified with USB unplugged yet. While USB power is connected, suspend cannot work: the USB controller blocks it while the gadget is connected ("USB is outside LPM"; it passes with the controller forced off through `/sys/bus/platform/devices/a600000.ssusb/mode`), and the Google charger driver re-arms an alarm every 2 s while charging, so `alarmtimer` refuses suspend. With Bluetooth on, the Bluetooth UART used to block suspend (`qup_uart` failed to suspend noirq); patch 0019 is meant to fix that and is not verified yet either. |
 | Sensors (accelerometer, light, proximity) | Through iio-sensor-proxy over libssc (SSC backend, patch 0001 in `temp/iio-sensor-proxy`; udev tags from `bramble-sensors`). `monitor-sensor` reports light in lux, proximity near/far and the tilt. Phosh auto-brightness, when its setting is on, lowers the backlight at about 187 lux (513 to 127 in the test). Auto-rotate (orientation lock off) and the proximity blank during calls are not verified: the first needs a hand check of the screen turning, the second needs a call (voice calls are untested). Tap to wake does not use proximity. |
+| Fingerprint reader | Enrol, verify, list and remove go through the fingerprint HAL in the Android container, with the `bramble-fingerprint` client. A full enrol on the phone is not yet done. Unlocking the Phosh lock screen with the finger is not built. |
 
 ## Does not work
 
@@ -39,7 +41,6 @@ was checked; the technical background is in
 |---|---|
 | Voice calls | Not tested: the test SIM is data only. |
 | Camera | Not feasible on this kernel without the vendor camera stack. See [camera.md](camera.md). |
-| Fingerprint reader | No driver or userspace. |
 
 ## Known problems
 
