@@ -22,8 +22,7 @@ flowchart LR
 
 - `bramble-android-hal` runs Android 14 init from the Halium system image
   with the vendor partition in private namespaces, and starts only the
-  camera and fingerprint services (see [porting-notes.md](porting-notes.md),
-  "Android HAL container").
+  camera and fingerprint services (see [android-hal.md](android-hal.md)).
 - `bramble-camera-ndk serve` (built with the Android NDK from
   `tools/android-helpers/`) opens a camera while a client is connected. It
   runs one capture session with two outputs: a YUV viewfinder stream and a

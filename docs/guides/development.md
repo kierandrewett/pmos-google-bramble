@@ -1,7 +1,7 @@
 # Development
 
 How to change, build and test the bramble packages. Read
-[porting-notes.md](porting-notes.md) first.
+[hardware notes](../hardware/README.md) first.
 
 ## Repository layout
 
@@ -12,20 +12,18 @@ in the same directory layout, plus docs and scripts. The git history of
 
 | Path | What |
 |---|---|
-| `pmaports/` | The packages, in pmaports layout. This is the source of truth: commit package changes here. |
-| `pmaports/device/downstream/device-google-bramble/` | Device package: deviceinfo, udev rules, ALSA UCM, OpenRC services for the modem, firmware, GNSS (`bramble-gnss`) and UI boost (`bramble-ui-boost`), environment for phoc, `libfix_drm_formats.so`; the `-pipewire` subpackage has the WirePlumber config and the speaker filter. |
-| `pmaports/device/downstream/linux-google-bramble/` | Downstream 4.19 kernel: config and patches `0001`-`0025`. |
-| `pmaports/device/downstream/bramble-android-hal/` | Android vendor HAL container (Halium 14 system image from `pmaports/main/halium-gsi-34/`): runs the camera and fingerprint HALs; the PipeWire camera bridge for camera apps. The prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` are built from `tools/android-helpers/` with the Android NDK (`tools/android-helpers/build.sh`). |
-| `pmaports/device/downstream/bramble-fingerprint/` | `bramble-fingerprint` client for the fingerprint HAL (enrol, verify, list, remove), and `bramble-fingerprint-unlock`, the service that unlocks the lock screen with a finger. |
-| `pmaports/device/downstream/bramble-sensors/` | Sensors DSP service (Hexagon FS through `hexagonrpcd`), udev tags for iio-sensor-proxy, `bramble-sensors-demo`. |
-| `pmaports/main/qrtr-ns/`, `pd-mapper/` | QRTR name service and protection domain mapper for kernels without in-kernel QRTR NS / remoteproc. |
-| `pmaports/main/mesa-vulkan-freedreno-kgsl/` | Mesa turnip (Vulkan) for the downstream KGSL GPU driver. |
-| `pmaports/temp/tqftpserv/`, `temp/gmobile/`, `temp/phoc/`, `temp/bubblewrap/`, `temp/hexagonrpcd/`, `temp/iio-sensor-proxy/` | Temporary forks of Alpine packages with bramble patches. `temp/phoc` adds the screen fade and a crash fix; phoc and Phosh are released together, so rebase it when Alpine edge moves Phosh to a new version. |
-| `pmaports/temp/adbd/`, `temp/scrcpy-server/` | adb daemon (USB and TCP) and a native scrcpy server, so the stock `adb` and `scrcpy` work from a PC. |
-| `pmaports/temp/snapshot/` | GNOME Snapshot with a patch that takes photos through the camera HAL. pmbootstrap builds its Rust code under QEMU, which takes hours; building it on the phone with `abuild` from the same directory takes about 15 minutes. |
+| `pmaports/` | The packages, in pmaports layout. This is the source of truth: commit package changes here. [pmaports/README.md](../../pmaports/README.md) lists every package. |
 | `scripts/setup-pmaports.sh` | Puts these packages into a pmaports checkout at the pinned commit. |
 | `scripts/ci.sh`, `scripts/check-versions.py` | The pmaports CI checks for this overlay (also run by `.github/workflows/ci.yml`). |
-| `docs/` | Documentation. |
+| `tools/android-helpers/` | Source of the prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` in `bramble-android-hal`. Build with the Android NDK: `tools/android-helpers/build.sh`. |
+| `tools/gnome-shell-probe/` | Runs stock GNOME Shell headless on the phone and saves a screenshot ([gnome-shell.md](../hardware/gnome-shell.md)). |
+| `docs/` | Documentation; the index is [docs/README.md](../README.md). |
+
+`temp/phoc` adds the screen fade and a crash fix. Phoc and Phosh are
+released together, so rebase it when Alpine edge moves Phosh to a new
+version. pmbootstrap builds the Rust code of `temp/snapshot` under QEMU,
+which takes hours. Building it on the phone with `abuild` from the same
+directory takes about 15 minutes.
 
 pmbootstrap builds from one pmaports checkout, so the packages are copied
 into one (`build/pmaports` by default). After changing a package here, run
@@ -127,7 +125,7 @@ ctypes.CDLL(None).syscall(142, 0xfee1dead, 672274793, 0xA1B2C3D4, b\"bootloader\
 
 Device tree changes go into the base DT (patched `lito.dtsi`, built into
 vendor_boot) or into drivers. Do not flash a dtbo built from this tree;
-see porting-notes.md.
+see [boot.md](../hardware/boot.md).
 
 ## Debugging
 

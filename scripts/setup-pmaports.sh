@@ -115,5 +115,5 @@ cat <<EOF
 
 [setup] done. Next:
   pmbootstrap --aports "$target" init
-See docs/install.md for the answers to give.
+See docs/guides/install.md for the answers to give.
 EOF

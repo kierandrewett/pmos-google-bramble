@@ -61,7 +61,7 @@ Answer the questions like this:
 | Device codename | `bramble` |
 | User interface | `phosh` |
 | systemd | `never` (the port uses OpenRC services) |
-| Provider for `postmarketos-base-ui-audio-backend` | `pipewire`. The default, PulseAudio, plays but does not switch to headphones; see [status.md](status.md). |
+| Provider for `postmarketos-base-ui-audio-backend` | `pipewire`. The default, PulseAudio, plays but does not switch to headphones; see [status.md](../status.md). |
 | Provider for `postmarketos-base-ui-wifi` | the default, `wpa_supplicant` |
 | Username, hostname, locale, timezone | your choice |
 
@@ -100,19 +100,19 @@ with the password from step 4, then connect to Wi-Fi from the top bar.
 - SSH over USB: the phone is `172.16.42.1` while it is in developer mode,
   `ssh user@172.16.42.1`.
 - File transfer: switch the USB mode to MTP, then the phone appears in your
-  file manager. See [status.md](status.md).
+  file manager. See [status.md](../status.md).
 - adb and screen mirroring from a PC: `adb devices` and `scrcpy` work over
   the same USB cable. See [development.md](development.md).
 - Camera: open "Camera" (GNOME Snapshot). The back, ultrawide and front
-  cameras are in its camera list. See [camera.md](camera.md).
+  cameras are in its camera list. See [camera.md](../hardware/camera.md).
 - Fingerprint: enrol a finger once, with the phone unlocked:
   `sudo bramble-fingerprint enroll`, and touch the reader on the back about
   eight times. The unlock service then lets that finger unlock the lock
   screen; the PIN keeps working. See [development.md](development.md) and
-  [status.md](status.md) for what has been tested.
+  [status.md](../status.md) for what has been tested.
 - Updating: these packages are not in the postmarketOS binary repository.
   Rebuild them with pmbootstrap and install them on the phone with
   `pmbootstrap sideload <package>`. A new kernel also has to be flashed
   again (`pmbootstrap flasher flash_kernel` and `flash_vendorboot`); see
   [development.md](development.md).
-- Feature status and known problems: [status.md](status.md).
+- Feature status and known problems: [status.md](../status.md).

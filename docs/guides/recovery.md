@@ -8,7 +8,7 @@ partitions that are unique to your phone: modem calibration and IMEI
 display calibration) and a few others. postmarketOS does not write to them,
 with one exception: the Android container writes the fingerprint reader's
 secure storage to `persist` once you enrol a finger (see
-[porting-notes.md](porting-notes.md), "Fingerprint"). Keep a copy of all of
+[hardware/fingerprint.md](../hardware/fingerprint.md)). Keep a copy of all of
 them anyway.
 
 You need root on the phone to read them. The simplest way is a temporary
