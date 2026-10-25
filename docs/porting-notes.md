@@ -313,6 +313,23 @@ start WirePlumber with `monitor.bluez.seat-monitoring = disabled`.
 networking, SSH on 172.16.42.1), tethering, MTP (`umtprd`) or charging only.
 MTP needs `CONFIG_POSIX_MQUEUE` (umtprd uses POSIX message queues).
 
+adb: `temp/adbd` builds AOSP adbd as a standalone Linux daemon
+(happyme531/standalone-linux-adbd on the android-tools 36.0.1 sources).
+Its OpenRC service mounts a FunctionFS instance, lets adbd write the
+descriptors, then links the `ffs.adb` function into the configfs gadget
+next to `ncm.usb0` and rebinds the UDC, which removes `usb0` for a moment;
+the service puts the 172.16.42.1 address back and restarts the DHCP
+server. `adb shell` runs as the default user with the `input` group.
+There is no key authentication, so TCP 5555 is bound to the USB network
+address only.
+
+scrcpy: the PC client pushes its Java server and runs it with
+`app_process`. `temp/scrcpy-server` installs `/usr/bin/app_process` as a
+shim that starts a native server instead. It speaks the scrcpy 4.x
+protocol, captures phoc's output with wlr-screencopy (so it only sends
+frames while the screen is on), encodes H.264 with x264 and injects touch
+and keys through a uinput device.
+
 ## polkit
 
 polkit 127 resolves each caller through a pidfd and reads the PID from
@@ -322,16 +339,64 @@ own user) got `EACCES` and every check failed with "Process not found":
 Settings and Phosh could not switch Wi-Fi off, for example. 0018 backports
 the mainline fdinfo access rule (7bc3fa0172a4).
 
+## Shared memory
+
+GNOME's image loader (glycin) passes decoded images in memfds sealed
+with `F_SEAL_WRITE` and maps them read-only and shared. 4.19 refuses any
+shared mapping of a write-sealed memfd with `EPERM`, so Image Viewer
+(Loupe) showed "Could not load image" for every file. 0024 backports the
+mainline 6.7 rule: a read-only shared mapping of a write-sealed memfd is
+allowed, and `VM_MAYWRITE` is cleared so it cannot be made writable.
+
+## Android HAL container
+
+The cameras and the fingerprint reader only work through Google's closed
+vendor HALs (camera: CAMX kernel drivers plus the vendor camera provider;
+fingerprint: the FPC HAL with its trusted app in QSEE). `bramble-android-hal`
+runs them without libhybris: Android 14 init from the Halium GSI
+(`halium-gsi-34`) starts in private mount, PID, IPC and UTS namespaces
+with the phone's own vendor partition, and only the vendor services
+listed in `vendor-init.list` start. The modem, Wi-Fi, audio and the rest
+stay with the native Linux stack. `bramble-android.sh` and `bramble.rc`
+explain each workaround (no SELinux policy, APEX loop devices, stubbed
+`vdc`, a stand-in for `system_server`'s camera proxy).
+
+Kernel: `CONFIG_PID_NS` is on for the container's own PID 1, and 0023
+lets the container mount its own procfs (the superblock is looked up in
+the user namespace that owns the PID namespace, as in mainline).
+
+Camera apps: `bramble-camera-ndk serve` runs inside the container and
+streams NV12 frames from the NDK camera API over a host socket
+(`/run/bramble-android/camera/camera.sock`). `bramble-camera-pipewire`
+(started in each Phosh session) turns each camera into a PipeWire video
+source node, which GNOME Snapshot uses through the camera portal. See
+[camera.md](camera.md).
+
 ## Sensors
 
 The accelerometer, ambient light and proximity sensors sit behind the Qualcomm sensor core on the ADSP. `bramble-sensors` runs the patched `hexagonrpcd`, and `iio-sensor-proxy` (patch 0001 in `temp/iio-sensor-proxy`, built with libssc) serves them on `net.hadess.SensorProxy`. Its OpenRC service starts after `bramble-sensors`, which must have created the `adsprpc-smd-secure` node. The udev rule in `bramble-sensors` (`71-bramble-sensors.rules`) tags that node as `ssc-accel`, `ssc-light` and `ssc-proximity`.
 
 Checked with `monitor-sensor` inside the Phosh session (it must run in the session cgroup for the polkit claim): light in lux, proximity near/far, tilt. Phosh's auto-brightness lowers the backlight at low light. Auto-rotate and the proximity blank during calls: see status.md.
 
+## Fingerprint
+
+The reader is driven by Android's fingerprint HAL (`fps_hal`), which runs in the `bramble-android-hal` container. The phone's own libfprint has only the elan driver, and it does not drive this HAL, so stock fprintd cannot be used. The `bramble-fingerprint` package (`pmaports/device/downstream/bramble-fingerprint`) talks to the HAL over hwbinder. `bramble-fingerprint.sh` finds the container's logd, then runs the client in a private mount namespace where `/dev/hwbinder` is the container's binder node, so the host `/dev` is untouched. The templates are stored by the HAL in the container's `/data`; the client keeps its own state in `/var/lib/bramble-fingerprint` (root only).
+
+Commands: `bramble-fingerprint status|enroll|verify|list|remove`. It re-runs itself with sudo. Enrol waits up to 180 s for the touches, and the other commands up to 60 s.
+
+Enrolment needs an auth token from gatekeeper, signed with the key that
+keymaster agrees on at boot (`computeSharedHmac`). On Android, keystore2
+does that agreement; the container has no keystore2, so the
+`bramble-fingerprint` OpenRC service runs it after the container starts,
+then restarts `fps_hal`. The restart also matters on its own: an
+`fps_hal` that opened its trusted app before `qseecomd` registered its
+listeners rejects every enrol with `FPC_ERROR_INPUT`.
+
+Phosh unlock is not built. The lock screen authenticates through PAM, and the phone has `pam_fprintd.so` but no fprintd backend that can reach the HAL. A working unlock needs a root-owned helper that runs the verify through the HAL, and a PAM rule for the phosh lock screen that calls the helper before the password. It must fall back to the password on any failure, so that a bad reader cannot lock the owner out. It can only be tested with a finger on the reader.
+
 ## Not working yet
 
 - Voice calls: not tested; the test SIM is data only.
-- Camera: not feasible on this kernel. See [camera.md](camera.md).
 - Suspend: a connected USB cable always blocks it (the USB controller
   stays out of low power mode). With USB unplugged it is not verified
   yet; see the status page.
