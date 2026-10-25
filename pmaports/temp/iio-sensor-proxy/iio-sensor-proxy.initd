@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+# iio-sensor-proxy serves the Pixel 4a (5G) accelerometer, light and
+# proximity sensors from the sensors DSP over libssc. It only starts
+# sensors that exist when it starts, and it exits if it finds none, so it
+# has to start after bramble-sensors has brought up hexagonrpcd.
+
+supervisor=supervise-daemon
+command="/usr/libexec/iio-sensor-proxy"
+
+depend() {
+	need dbus
+	after bramble-sensors
+}

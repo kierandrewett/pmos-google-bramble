@@ -31,6 +31,7 @@ was checked; the technical background is in
 |---|---|
 | Audio server | PipeWire (answer `pipewire` for `postmarketos-base-ui-audio-backend` in `pmbootstrap init`) is the recommended backend: it plays, records and switches to headphones. PulseAudio (the postmarketOS default) plays and records, but does not move audio to headphones on plug-in: callaudiod unloads `module-switch-on-port-available` and only switches ports inside one sink, while the UCM profile puts speaker and headphones in separate profiles. |
 | Suspend | Not verified with USB unplugged yet. While USB power is connected, suspend cannot work: the USB controller blocks it while the gadget is connected ("USB is outside LPM"; it passes with the controller forced off through `/sys/bus/platform/devices/a600000.ssusb/mode`), and the Google charger driver re-arms an alarm every 2 s while charging, so `alarmtimer` refuses suspend. With Bluetooth on, the Bluetooth UART used to block suspend (`qup_uart` failed to suspend noirq); patch 0019 is meant to fix that and is not verified yet either. |
+| Sensors (accelerometer, light, proximity) | Through iio-sensor-proxy over libssc (SSC backend, patch 0001 in `temp/iio-sensor-proxy`; udev tags from `bramble-sensors`). `monitor-sensor` reports light in lux, proximity near/far and the tilt. Phosh auto-brightness, when its setting is on, lowers the backlight at about 187 lux (513 to 127 in the test). Auto-rotate (orientation lock off) and the proximity blank during calls are not verified: the first needs a hand check of the screen turning, the second needs a call (voice calls are untested). Tap to wake does not use proximity. |
 
 ## Does not work
 
@@ -38,7 +39,6 @@ was checked; the technical background is in
 |---|---|
 | Voice calls | Not tested: the test SIM is data only. |
 | Camera | Not feasible on this kernel without the vendor camera stack. See [camera.md](camera.md). |
-| Sensors (rotation, proximity, light) | They sit behind the Qualcomm sensor core on the ADSP; hexagonrpcd reaches the sensor registry but delivers no samples yet. |
 | Fingerprint reader | No driver or userspace. |
 
 ## Known problems

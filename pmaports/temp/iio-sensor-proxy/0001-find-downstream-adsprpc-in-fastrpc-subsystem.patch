@@ -1,0 +1,21 @@
+diff --git a/src/iio-sensor-proxy.c b/src/iio-sensor-proxy.c
+--- a/src/iio-sensor-proxy.c
++++ b/src/iio-sensor-proxy.c
+@@ -138,6 +138,9 @@
+ 	GList *fastrpc;
+ 	fastrpc = g_udev_client_query_by_subsystem (client, "misc");
+ 	devices = g_list_concat (devices, fastrpc);
++	/* Downstream (msm-4.19) kernels expose adsprpc in the fastrpc class */
++	fastrpc = g_udev_client_query_by_subsystem (client, "fastrpc");
++	devices = g_list_concat (devices, fastrpc);
+ #endif
+ 
+ 	/* Find the devices */
+@@ -718,6 +721,7 @@
+ 		"platform",
+ #ifdef HAS_LIBSSC
+ 		"misc",
++		"fastrpc",
+ #endif
+ 		NULL
+     };

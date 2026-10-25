@@ -322,12 +322,15 @@ own user) got `EACCES` and every check failed with "Process not found":
 Settings and Phosh could not switch Wi-Fi off, for example. 0018 backports
 the mainline fdinfo access rule (7bc3fa0172a4).
 
+## Sensors
+
+The accelerometer, ambient light and proximity sensors sit behind the Qualcomm sensor core on the ADSP. `bramble-sensors` runs the patched `hexagonrpcd`, and `iio-sensor-proxy` (patch 0001 in `temp/iio-sensor-proxy`, built with libssc) serves them on `net.hadess.SensorProxy`. Its OpenRC service starts after `bramble-sensors`, which must have created the `adsprpc-smd-secure` node. The udev rule in `bramble-sensors` (`71-bramble-sensors.rules`) tags that node as `ssc-accel`, `ssc-light` and `ssc-proximity`.
+
+Checked with `monitor-sensor` inside the Phosh session (it must run in the session cgroup for the polkit claim): light in lux, proximity near/far, tilt. Phosh's auto-brightness lowers the backlight at low light. Auto-rotate and the proximity blank during calls: see status.md.
+
 ## Not working yet
 
 - Voice calls: not tested; the test SIM is data only.
-- Sensors (accelerometer, proximity, light) sit behind the Qualcomm sensor
-  core on the ADSP. hexagonrpcd and libssc get as far as the sensor
-  registry; no samples yet.
 - Camera: not feasible on this kernel. See [camera.md](camera.md).
 - Suspend: a connected USB cable always blocks it (the USB controller
   stays out of low power mode). With USB unplugged it is not verified

@@ -1,0 +1,53 @@
+# Forked from Alpine for temporary downstream patches
+# The Pixel 4a 5G (google-bramble) sensors reach libssc through the downstream
+# adsprpc node, which is in the fastrpc class rather than misc. The patch
+# makes iio-sensor-proxy look there too.
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=iio-sensor-proxy
+pkgver=3.9
+pkgrel=3
+pkgdesc="IIO sensors to D-Bus proxy"
+url="https://gitlab.freedesktop.org/hadess/iio-sensor-proxy"
+arch="all"
+license="GPL-2.0-or-later"
+depends="dbus"
+makedepends="
+	eudev-dev
+	glib-dev
+	libgudev-dev
+	meson
+	polkit-dev
+	libssc-dev
+	"
+subpackages="$pkgname-openrc $pkgname-systemd $pkgname-udev $pkgname-dbg"
+source="https://gitlab.freedesktop.org/hadess/iio-sensor-proxy/-/archive/$pkgver/iio-sensor-proxy-$pkgver.tar.gz
+	0001-find-downstream-adsprpc-in-fastrpc-subsystem.patch
+	iio-sensor-proxy.initd
+	"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dssc-support=enabled \
+		-Dsystemdsystemunitdir=/usr/lib/systemd/system \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+a89c842f8db2a1a36c1c7c990434bb57fd905224459170cba2ec56e79f1272acc4cac4221937704d5e9247f957d86fde716d25e2d1ccb80d88fa643b47edfda6  iio-sensor-proxy-3.9.tar.gz
+81847c436c2dad47655d8bfc42b58674df5dbf69927acc618179e938c99871bc565f4c2a2c4a7f2946122edcfea9c7641dac3f2120440649b0271e94aa708fcd  0001-find-downstream-adsprpc-in-fastrpc-subsystem.patch
+36fbaca464ebd9e3033ee9091915f058655068b60561fd32dfd44511213725c1e24a0416bbf6921c82ccf72e5b5d377aa93b141fcbba423fa1f82bab411a450b  iio-sensor-proxy.initd
+"

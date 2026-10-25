@@ -1,0 +1,1 @@
+SUBSYSTEM=="fastrpc", KERNEL=="adsprpc-smd-secure", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel ssc-light ssc-proximity"
