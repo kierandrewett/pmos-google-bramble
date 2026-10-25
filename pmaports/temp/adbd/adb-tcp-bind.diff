@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kieran Drewett <kieran@drewett.dev>
+Date: Sat, 24 Oct 2026 12:00:00 +0000
+Subject: [PATCH] adb: let standalone Linux adbd bind TCP to one IPv4 address
+
+The standalone Linux adbd listens on INADDR_ANY for tcp:PORT. Its TCP
+transport has no authentication, so that exposes the shell on every
+interface, including Wi-Fi. Honour ADBD_TCP_BIND=<IPv4 address> to restrict
+the listener to one address (the USB network address in the package's
+init script). Unset keeps the upstream behaviour. Host builds are unchanged.
+---
+--- a/socket_spec.cpp
++++ b/socket_spec.cpp
+@@ -16,6 +16,11 @@
+ 
+ #include "socket_spec.h"
+ 
++#include <arpa/inet.h>
++#include <netinet/in.h>
++#include <sys/socket.h>
++#include <cerrno>
++#include <cstring>
+ #include <limits>
+ #include <string>
+ #include <string_view>
+@@ -337,6 +342,33 @@
+     return false;
+ }
+ 
++// Standalone Linux adbd: TCP has no authentication, so ADBD_TCP_BIND=<IPv4>
++// restricts the listener to that address instead of INADDR_ANY.
++#if !ADB_HOST
++static int network_ipv4_server_on(const char* ip, int port, std::string* error) {
++    unique_fd s(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
++    if (s == -1) {
++        *error = strerror(errno);
++        return -1;
++    }
++    int one = 1;
++    adb_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
++    sockaddr_in addr{};
++    addr.sin_family = AF_INET;
++    addr.sin_port = htons(port);
++    if (inet_pton(AF_INET, ip, &addr.sin_addr) != 1) {
++        *error = "ADBD_TCP_BIND is not an IPv4 address";
++        return -1;
++    }
++    if (bind(s.get(), reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
++        listen(s.get(), SOMAXCONN) != 0) {
++        *error = strerror(errno);
++        return -1;
++    }
++    return s.release();
++}
++#endif
++
+ int socket_spec_listen(std::string_view spec, std::string* error, int* resolved_port) {
+     if (spec.starts_with("tcp:")) {
+         std::string hostname;
+@@ -351,7 +383,13 @@
+ #else
+         if (hostname.empty()) {
+ #endif
++#if !ADB_HOST
++            const char* bind_ip = getenv("ADBD_TCP_BIND");
++            result = bind_ip ? network_ipv4_server_on(bind_ip, port, error)
++                             : network_inaddr_any_server(port, SOCK_STREAM, error);
++#else
+             result = network_inaddr_any_server(port, SOCK_STREAM, error);
++#endif
+         } else if (tcp_host_is_local(hostname)) {
+             result = network_loopback_server(port, SOCK_STREAM, error, true);
+         } else if (hostname == "::1") {

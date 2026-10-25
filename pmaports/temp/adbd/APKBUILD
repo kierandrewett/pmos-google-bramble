@@ -1,0 +1,109 @@
+# Temporary package: standalone Linux build of AOSP adbd 36.0.1 for the
+# Pixel 4a 5G (bramble). Alpine and postmarketOS do not ship the AOSP adb
+# daemon for Linux (the adbd package in the repos is art_standalone, a
+# different project). The -openrc subpackage adds a FunctionFS adb function
+# to the USB gadget beside ncm.usb0 and a TCP listener on the USB network
+# address only (see /etc/conf.d/adbd).
+# Upstream: https://github.com/happyme531/standalone-linux-adbd (pinned below)
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=adbd
+pkgver=36.0.1
+pkgrel=1
+pkgdesc="Android Debug Bridge daemon, standalone Linux build (USB FunctionFS and TCP)"
+url="https://github.com/happyme531/standalone-linux-adbd"
+arch="aarch64"
+license="Apache-2.0"
+makedepends="cmake linux-headers ninja patch xz"
+subpackages="$pkgname-openrc"
+options="!check" # No test suite for the daemon-only build
+
+_standalone=bdb5cdc4b516b3bc71fd2b805bc36190041a9393
+_brotli=ed738e842d2fbdf2d6459e39267a633c4a9b2f5d
+_lz4=ebb370ca83af193212df4dcbadcc5d87bc0de2f0
+_zstd=f8745da6ff1ad1e7bab384bd1f9d742439278e99
+
+builddir="$srcdir/standalone-linux-adbd-$_standalone"
+
+# The AOSP sources (adb, core, libbase, logging, fmtlib) come from the
+# android-tools $pkgver release tarball: the same commits the standalone tree
+# pins, with its musl/Linux patches already applied, in a file that does not
+# change between downloads (googlesource archives are generated on the fly
+# and their checksums change). prepare() unpacks it all into vendor/.
+noextract="android-tools-$pkgver.tar.xz brotli-$_brotli.tar.gz
+	lz4-$_lz4.tar.gz zstd-$_zstd.tar.gz"
+
+source="standalone-linux-adbd-$_standalone.tar.gz::https://github.com/happyme531/standalone-linux-adbd/archive/$_standalone.tar.gz
+	https://github.com/nmeum/android-tools/releases/download/$pkgver/android-tools-$pkgver.tar.xz
+	brotli-$_brotli.tar.gz::https://github.com/google/brotli/archive/$_brotli.tar.gz
+	lz4-$_lz4.tar.gz::https://github.com/lz4/lz4/archive/$_lz4.tar.gz
+	zstd-$_zstd.tar.gz::https://github.com/facebook/zstd/archive/$_zstd.tar.gz
+	adb-tcp-bind.diff
+	adbd.initd
+	adbd.confd
+	adbd-openrc.post-install
+	"
+
+prepare() {
+	default_prepare
+
+	local v="$builddir/vendor" d
+
+	mkdir -p "$v/third_party/brotli" "$v/third_party/lz4" "$v/third_party/zstd"
+	tar -xJf "$srcdir/android-tools-$pkgver.tar.xz" -C "$srcdir"
+	for d in adb core libbase logging fmtlib; do
+		rm -rf "${v:?}/$d"
+		mv "$srcdir/android-tools-$pkgver/vendor/$d" "$v/$d"
+	done
+	tar -xzf "$srcdir/brotli-$_brotli.tar.gz" -C "$v/third_party/brotli" --strip-components=1
+	tar -xzf "$srcdir/lz4-$_lz4.tar.gz" -C "$v/third_party/lz4" --strip-components=1
+	tar -xzf "$srcdir/zstd-$_zstd.tar.gz" -C "$v/third_party/zstd" --strip-components=1
+
+	# The release tarball already has the android-tools patches. Apply the
+	# ones the standalone tree adds on top (Linux adbd: TCP daemon, FunctionFS
+	# USB, abstract sockets), then our TCP bind patch.
+	local p
+	for p in "$builddir"/patches/adb/0029-*.patch \
+		"$builddir"/patches/adb/0030-*.patch \
+		"$builddir"/patches/adb/0031-*.patch \
+		"$srcdir"/adb-tcp-bind.diff; do
+		patch -p1 -d "$v/adb" -i "$p"
+	done
+}
+
+build() {
+	cmake -G Ninja -B output -S "$builddir" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DANDROID_TOOLS_PATCH_VENDOR=OFF \
+		-DANDROID_TOOLS_USE_BUNDLED_FMT=ON \
+		-DANDROID_TOOLS_BUILD_ADBD_ONLY=ON \
+		-DANDROID_TOOLS_ADBD_FULLY_STATIC=ON \
+		-DANDROID_TOOLS_ADBD_USB=ON
+	cmake --build output --target adbd
+}
+
+package() {
+	install -Dm755 "$builddir"/output/vendor/adbd "$pkgdir"/usr/bin/adbd
+	install -Dm644 "$builddir"/LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+openrc() {
+	pkgdesc="Android Debug Bridge daemon: OpenRC service (adb over USB and TCP)"
+	depends="iproute2-minimal"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	install="$subpkgname.post-install"
+
+	install -Dm755 "$srcdir"/adbd.initd "$subpkgdir"/etc/init.d/adbd
+	install -Dm644 "$srcdir"/adbd.confd "$subpkgdir"/etc/conf.d/adbd
+}
+
+sha512sums="
+2d3319edf6aa3d189408753d4302308333574c1ce78d64e4709a0c0bdd70b565874146491fffd9c09ce9a323cb8ed7ea679007173ffa8845588d862dd48e7dcf  standalone-linux-adbd-bdb5cdc4b516b3bc71fd2b805bc36190041a9393.tar.gz
+f51e6b2197f455c3192fe27ba5c1bc04edfb6d37f20208c64a7c17a9c54e3d1d327c1d8a52014ecb3ec4bc1fae5a1205dea2fc54017dfada5a10ce6435405379  android-tools-36.0.1.tar.xz
+f493e7f15ca2804ae8715e48bdc954680f527533e684ec3762a7d49d05890915194289ed948c8cce95644274e1dcab952dcfbc84c0108aaf79f35f20270ffe6a  brotli-ed738e842d2fbdf2d6459e39267a633c4a9b2f5d.tar.gz
+35c21a5d9cfb5bbf314a5321d02b36819491d2ee3cf8007030ca09d13ca4dae672247b7aeab553e973093604fc48221cb03dc92197c6efe8fc3746891363fdab  lz4-ebb370ca83af193212df4dcbadcc5d87bc0de2f0.tar.gz
+3a3e8c5324bc66ca5cdaf83d26df16cdb7b67453277c2764df40171b6787d65aa0eedc9e61256acc95867904b81d4ed570b16edf1e540a9776dd86f70b8b0f37  zstd-f8745da6ff1ad1e7bab384bd1f9d742439278e99.tar.gz
+60a286f20cc8ac9993b059924a2a4daf9f99064bce3bbdacfdf344c6de383480bfa1042f904f15b305ec935d31d3ebefe805a362fc932f545308e6e845ab8109  adb-tcp-bind.diff
+13c9486f56ae542ca3c8e1bd8c5911494f951e9655f121a52c1acafb572e996adc5a25e46cad492e7f165472ec54d4fc34aa89828bb9c410d832cd0b24198e60  adbd.initd
+ce73715e9cbb5a475bb7e5a9585b56c40625c121c0913e407e4d7f8436d80f03bf08a38dec4b73b1d2d483fb2960b7de4892a5aba9c1ffdbf345a8e175cf4b55  adbd.confd
+787146de6a55f17fb292e7237ab45437f14d6ca5380e95a9e94847aa9ef5737d8b8399b513ea4ec3edffb2ca07e758247c75094b2c42001cac57f81dd0cdd3aa  adbd-openrc.post-install
+"

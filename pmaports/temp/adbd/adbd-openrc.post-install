@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Start adbd at boot. The USB function is added to the gadget by the init script.
+rc-update -q add adbd default
+
+exit 0

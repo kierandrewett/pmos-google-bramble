@@ -1,0 +1,161 @@
+#!/sbin/openrc-run
+# Standalone Linux adbd (see /etc/conf.d/adbd). adbd only speaks the ADB
+# protocol, so this script creates the FunctionFS mount, runs adbd as the
+# shell user (uid 10000) with the input group (so the scrcpy server can open
+# /dev/uinput), then links the "adb" function into the configfs gadget beside
+# ncm.usb0 and rebinds the UDC.
+#
+# The standalone build has no key authentication (auth_required = false), so
+# both USB and TCP are unauthenticated. TCP is bound to the USB network address
+# by default; see /etc/conf.d/adbd before changing ADBD_TCP_BIND.
+
+description="Android Debug Bridge daemon (USB FunctionFS and TCP)"
+
+: "${ADBD_GADGET:=g1}"
+: "${ADBD_CONFIG:=c.1}"
+: "${ADBD_TCP_PORT:=5555}"
+: "${ADBD_TCP_BIND:=172.16.42.1}"
+: "${ADBD_TCP_WAIT:=30}"
+: "${ADBD_UID:=10000}"
+_input_gid=$(getent group input | cut -d: -f3)
+: "${ADBD_GID:=${_input_gid:-$ADBD_UID}}"
+: "${ADBD_USB_NET:=usb0}"
+: "${ADBD_DATA_DIR:=/data/local/tmp}"
+
+command=/usr/bin/adbd
+command_user="$ADBD_UID:$ADBD_GID"
+supervisor=supervise-daemon
+respawn_delay=2
+respawn_max=5
+output_logger="logger -t adbd -p daemon.info"
+error_logger="logger -t adbd -p daemon.warning"
+
+_gadget=/sys/kernel/config/usb_gadget/$ADBD_GADGET
+_ffs=/dev/usb-ffs/adb
+
+depend() {
+	need localmount
+	after usb-signaller networkmanager
+}
+
+_udc() {
+	cat "$_gadget/UDC" 2> /dev/null
+}
+
+# The address may be on any interface (usb0 by default, or Wi-Fi if set).
+_bind_addr_up() {
+	ip -4 -o addr show 2> /dev/null | grep -q " $ADBD_TCP_BIND/"
+}
+
+# Unbinding the UDC removes usb0 and its address. Put the address back and
+# restart the DHCP server that hands the host its 172.16.42.2 lease.
+_restore_usb_net() {
+	local i=0
+	while ! ip link show "$ADBD_USB_NET" > /dev/null 2>&1 && [ "$i" -lt 20 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	if ! ip -4 -o addr show dev "$ADBD_USB_NET" 2> /dev/null | grep -q " 172.16.42.1/"; then
+		ip addr add 172.16.42.1/16 dev "$ADBD_USB_NET" 2> /dev/null
+	fi
+	ip link set "$ADBD_USB_NET" up 2> /dev/null
+	if [ -x "/etc/init.d/unudhcpd.$ADBD_USB_NET" ] &&
+		"/etc/init.d/unudhcpd.$ADBD_USB_NET" status > /dev/null 2>&1; then
+		"/etc/init.d/unudhcpd.$ADBD_USB_NET" restart > /dev/null 2>&1
+	fi
+}
+
+# Rebind the UDC. The gadget must be unbound before its functions change.
+_set_udc() {
+	echo "" > "$_gadget/UDC" || return 1
+	sleep 1
+	echo "$1" > "$_gadget/UDC" || return 1
+}
+
+start_pre() {
+	[ -d "$_gadget" ] || {
+		eerror "USB gadget $_gadget is not configured"
+		return 1
+	}
+
+	# adb push and the scrcpy server live here; the adb client expects it.
+	mkdir -p "$ADBD_DATA_DIR" &&
+		chown "$ADBD_UID:$ADBD_GID" "$ADBD_DATA_DIR" || return 1
+
+	# The function instance must exist before its FunctionFS can be mounted,
+	# and adbd writes its descriptors to ep0 of that mount.
+	[ -d "$_gadget/functions/ffs.adb" ] || mkdir "$_gadget/functions/ffs.adb" || return 1
+	mkdir -p "$_ffs"
+	mountpoint -q "$_ffs" ||
+		mount -t functionfs adb "$_ffs" -o uid="$ADBD_UID",gid="$ADBD_UID" || return 1
+
+	# usb-signaller sets the USB network address at boot; wait for it, otherwise
+	# start USB-only rather than exposing a listener on an address that is not up.
+	# Never inherit a port or bind from the environment: with a port set and no
+	# bind address, adbd listens on every interface with no authentication.
+	unset ADBD_PORT ADB_TCP_PORT
+	if [ -n "$ADBD_TCP_PORT" ]; then
+		if [ -z "$ADBD_TCP_BIND" ]; then
+			ewarn "ADBD_TCP_BIND is empty; refusing to bind TCP to all interfaces"
+		else
+			local i=0
+			while ! _bind_addr_up && [ "$i" -lt "$ADBD_TCP_WAIT" ]; do
+				sleep 1
+				i=$((i + 1))
+			done
+			if _bind_addr_up; then
+				export ADBD_PORT="$ADBD_TCP_PORT" ADBD_TCP_BIND
+				[ "$ADBD_TCP_BIND" = "172.16.42.1" ] ||
+					ewarn "adb TCP on $ADBD_TCP_BIND:$ADBD_TCP_PORT has NO authentication"
+			else
+				ewarn "$ADBD_TCP_BIND is not up; adbd runs USB-only"
+			fi
+		fi
+	fi
+}
+
+start_post() {
+	local i=0
+	# adbd opens ep0 and writes the descriptors; FunctionFS then creates ep1.
+	while [ ! -e "$_ffs/ep1" ] && [ "$i" -lt 40 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	if [ ! -e "$_ffs/ep1" ]; then
+		eerror "adbd did not write FunctionFS descriptors"
+		return 1
+	fi
+
+	local udc
+	udc=$(_udc)
+	if [ -z "$udc" ]; then
+		eerror "gadget $ADBD_GADGET is not bound to a UDC; adb over USB is not enabled"
+		return 1
+	fi
+
+	[ -L "$_gadget/configs/$ADBD_CONFIG/ffs.adb" ] ||
+		ln -s "$_gadget/functions/ffs.adb" "$_gadget/configs/$ADBD_CONFIG/ffs.adb" || return 1
+
+	_set_udc "$udc" || {
+		eerror "could not rebind UDC $udc"
+		return 1
+	}
+	_restore_usb_net
+}
+
+stop_post() {
+	local udc
+	udc=$(_udc)
+	if [ -L "$_gadget/configs/$ADBD_CONFIG/ffs.adb" ]; then
+		[ -n "$udc" ] && echo "" > "$_gadget/UDC"
+		sleep 1
+		rm -f "$_gadget/configs/$ADBD_CONFIG/ffs.adb"
+		[ -L "$_gadget/configs/$ADBD_CONFIG/ncm.usb0" ] ||
+			ln -s "$_gadget/functions/ncm.usb0" "$_gadget/configs/$ADBD_CONFIG/ncm.usb0"
+		[ -n "$udc" ] && _set_udc "$udc"
+		_restore_usb_net
+	fi
+	umount "$_ffs" 2> /dev/null
+	[ -d "$_gadget/functions/ffs.adb" ] && rmdir "$_gadget/functions/ffs.adb" 2> /dev/null
+	return 0
+}

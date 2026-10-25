@@ -1,0 +1,23 @@
+# Configuration for /etc/init.d/adbd
+
+# USB gadget (configfs name under /sys/kernel/config/usb_gadget) that gets the
+# adb function beside its existing network function.
+ADBD_GADGET="g1"
+
+# Configuration name inside that gadget.
+ADBD_CONFIG="c.1"
+
+# TCP port for adb. Empty disables the TCP listener.
+ADBD_TCP_PORT="5555"
+
+# Address the TCP listener is bound to. The default is the USB network address,
+# which only the host on the USB cable can reach.
+#
+# WARNING: the standalone adbd has NO key authentication (auth_required is
+# false), so anyone who can reach ADBD_TCP_PORT gets a shell as the shell user.
+# Setting this to a Wi-Fi address (for example 192.168.0.190) exposes that
+# shell to the LAN. Only do it on a network you trust, and firewall the port.
+ADBD_TCP_BIND="172.16.42.1"
+
+# Seconds to wait for ADBD_TCP_BIND to appear before starting without TCP.
+ADBD_TCP_WAIT="30"
