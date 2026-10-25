@@ -63,7 +63,7 @@ if [ -e "$manifest" ]; then
 	fi
 fi
 others=$(git status --porcelain --untracked-files=all | cut -c4- | while read -r p; do
-	if in_pkgdirs "$p" && { [ ! -e "$p" ] || grep -qF "  ./$p" "$manifest" 2> /dev/null; }; then
+	if in_pkgdirs "$p" && { [ ! -e "$p" ] || grep -qF "  ./$p" "$manifest" 2> /dev/null || cmp -s "$p" "$repo/pmaports/$p" 2> /dev/null; }; then
 		continue
 	fi
 	echo "$p"
