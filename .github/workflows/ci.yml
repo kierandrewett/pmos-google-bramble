@@ -8,13 +8,26 @@ permissions:
   contents: read
 
 jobs:
-  gitleaks:
+  checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (full history)
+      - name: Checkout (full history, for the version and secret checks)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Secret scan (history and working tree)
-        run: sh scripts/ci.sh gitleaks
+      - name: pmaports checks and secret scan
+        env:
+          # Compare package versions with the previous state of the branch.
+          CI_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A new branch has no "before" commit; fall back to HEAD~1.
+          case "$CI_BASE" in ""|0000000000000000000000000000000000000000) unset CI_BASE ;; esac
+          sh scripts/ci.sh
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: build/ci-logs/
