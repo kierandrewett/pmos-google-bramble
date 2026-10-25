@@ -1,8 +1,10 @@
 # Configuration for /etc/init.d/adbd
 
 # USB gadget (configfs name under /sys/kernel/config/usb_gadget) that gets the
-# adb function beside its existing network function.
-ADBD_GADGET="g1"
+# adb function beside its existing network function. Empty uses the only gadget
+# there is: it is called "g1" at boot, and usb-signaller replaces it with
+# "usb-signaller-<mode>" at every USB mode switch.
+ADBD_GADGET=""
 
 # Configuration name inside that gadget.
 ADBD_CONFIG="c.1"

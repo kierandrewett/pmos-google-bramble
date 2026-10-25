@@ -11,7 +11,7 @@
 
 description="Android Debug Bridge daemon (USB FunctionFS and TCP)"
 
-: "${ADBD_GADGET:=g1}"
+: "${ADBD_GADGET:=}"
 : "${ADBD_CONFIG:=c.1}"
 : "${ADBD_TCP_PORT:=5555}"
 : "${ADBD_TCP_BIND:=172.16.42.1}"
@@ -30,7 +30,24 @@ respawn_max=5
 output_logger="logger -t adbd -p daemon.info"
 error_logger="logger -t adbd -p daemon.warning"
 
-_gadget=/sys/kernel/config/usb_gadget/$ADBD_GADGET
+# The gadget is called "g1" at boot, but usb-signaller replaces it with
+# "usb-signaller-<mode>" at every USB mode switch. Use the configured gadget if
+# it exists, else the first one there is.
+_gadgets=/sys/kernel/config/usb_gadget
+_find_gadget() {
+	local d
+	if [ -n "$ADBD_GADGET" ] && [ -d "$_gadgets/$ADBD_GADGET" ]; then
+		echo "$_gadgets/$ADBD_GADGET"
+		return
+	fi
+	for d in "$_gadgets"/*; do
+		[ -d "$d" ] && {
+			echo "$d"
+			return
+		}
+	done
+}
+_gadget=$(_find_gadget)
 _ffs=/dev/usb-ffs/adb
 
 depend() {
@@ -38,8 +55,14 @@ depend() {
 	after usb-signaller networkmanager
 }
 
+# The UDC the gadget is bound to, else the first controller there is. The
+# gadget is left unbound when adbd exits (seen after "rc-service adbd stop"),
+# so a restart has to look the controller up instead of reading it back.
 _udc() {
-	cat "$_gadget/UDC" 2> /dev/null
+	local udc
+	udc=$(cat "$_gadget/UDC" 2> /dev/null)
+	[ -n "$udc" ] || udc=$(ls /sys/class/udc 2> /dev/null | head -n 1)
+	echo "$udc"
 }
 
 # The address may be on any interface (usb0 by default, or Wi-Fi if set).
@@ -65,16 +88,18 @@ _restore_usb_net() {
 	fi
 }
 
-# Rebind the UDC. The gadget must be unbound before its functions change.
+# Rebind the UDC. The gadget must be unbound before its functions change. The
+# unbind write fails when the UDC is already unbound (stop_post does that
+# first), so ignore its result: the bind that follows reports a real failure.
 _set_udc() {
-	echo "" > "$_gadget/UDC" || return 1
+	echo "" > "$_gadget/UDC" 2> /dev/null
 	sleep 1
 	echo "$1" > "$_gadget/UDC" || return 1
 }
 
 start_pre() {
 	[ -d "$_gadget" ] || {
-		eerror "USB gadget $_gadget is not configured"
+		eerror "no USB gadget in $_gadgets"
 		return 1
 	}
 
@@ -129,7 +154,7 @@ start_post() {
 	local udc
 	udc=$(_udc)
 	if [ -z "$udc" ]; then
-		eerror "gadget $ADBD_GADGET is not bound to a UDC; adb over USB is not enabled"
+		eerror "no USB device controller in /sys/class/udc; adb over USB is not enabled"
 		return 1
 	fi
 
@@ -147,12 +172,12 @@ stop_post() {
 	local udc
 	udc=$(_udc)
 	if [ -L "$_gadget/configs/$ADBD_CONFIG/ffs.adb" ]; then
-		[ -n "$udc" ] && echo "" > "$_gadget/UDC"
+		echo "" > "$_gadget/UDC" 2> /dev/null
 		sleep 1
 		rm -f "$_gadget/configs/$ADBD_CONFIG/ffs.adb"
 		[ -L "$_gadget/configs/$ADBD_CONFIG/ncm.usb0" ] ||
 			ln -s "$_gadget/functions/ncm.usb0" "$_gadget/configs/$ADBD_CONFIG/ncm.usb0"
-		[ -n "$udc" ] && _set_udc "$udc"
+		_set_udc "$udc"
 		_restore_usb_net
 	fi
 	umount "$_ffs" 2> /dev/null
