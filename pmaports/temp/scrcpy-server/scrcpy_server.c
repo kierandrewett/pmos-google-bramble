@@ -1230,10 +1230,12 @@ int main(int argc, char **argv) {
         if (o.control) cfd = sock_connect(name);
     }
     if (afd >= 0) {
-        /* codec id 0 = audio explicitly disabled; the client continues video-only */
+        /* codec id 0 = audio explicitly disabled; the client continues
+         * video-only. Keep the socket open until the session ends: closing
+         * it at once lets the adb tunnel drop the four bytes, and the client
+         * then reports a connection error and quits. */
         uint8_t zero[4] = { 0, 0, 0, 0 };
         write_all(afd, zero, sizeof zero);
-        close(afd);
     }
 
     const char *devname = getenv("SCRCPY_DEVICE_NAME");

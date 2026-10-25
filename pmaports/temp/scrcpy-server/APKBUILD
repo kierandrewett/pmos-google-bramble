@@ -5,7 +5,7 @@
 maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=scrcpy-server
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Native scrcpy server for postmarketOS (wlr-screencopy, x264, uinput), with an app_process shim"
 url="https://github.com/Genymobile/scrcpy"
 arch="aarch64"
@@ -38,7 +38,7 @@ package() {
 }
 
 sha512sums="
-18f0aa47a1e72b3758e4cf4ed92d59a1b26a4ab8d6edabda25b45a17c763755b71fbb71f16a63c4d44f6541f87f0d55bceb99dded43661811dbb1adb172a3a16  scrcpy_server.c
+d7b05227b1d03b2eeceeae562b200eff778b9d860412c24f9c53b732784113d72b20350b77899a269d6da9d207e7cb3112b656731fc92f19e7d72e2250c0ae97  scrcpy_server.c
 68ef4e05fb4f6b9d5db4cac4e291d61cc3f55d88885e551b77b675ccc559e487fd0bf03caf35cc936b3a82735b9524a9eeef7b2d82cd539282ca2cc4d0e0b92a  app_process
 216b1dc48ce652896249b203a4a5c52d7a99ebef691c28d9af3e9dcbd4685c1b748deef257ab71f7ddbdf86ab6e0a7eee4af494d4680c1a0f209c07639d55402  71-scrcpy-uinput.rules
 "
