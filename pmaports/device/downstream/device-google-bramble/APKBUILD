@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=31
+pkgrel=32
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -12,7 +12,7 @@ depends="
 	android-tools
 	bootmac
 	libdrm
-	linux-google-bramble>=4.19.325-r30
+	linux-google-bramble
 	make-dynpart-mappings
 	mesa-vulkan-freedreno-kgsl
 	msm-firmware-loader
