@@ -12,7 +12,7 @@ the [hardware notes](hardware/README.md).
 | Display, touch, Phosh | Daily use. Scale 3.0 checked on the phone: the right edge matches the wallpaper, the app grid has 4 columns, and the first status icon starts 30 px after the punch-hole | 60 Hz panel. phoc scale 3.0 (a 360x780 logical screen): 2.75 left two columns on the right edge unpainted, which showed as a thin line. The status bar keeps clear of the punch-hole through `temp/gmobile`. |
 | GPU acceleration | Phosh renders with Mesa turnip and zink on KGSL | See [hardware/display-gpu.md](hardware/display-gpu.md). |
 | Wi-Fi | Daily use, SSH over Wi-Fi; switched off and on from Settings | Wakes the phone on incoming traffic (WoWLAN). Kernel patch 0018 makes polkit work, which the Wi-Fi switch in Settings needs. |
-| Mobile data (LTE) | Simbase SIM roaming on Vodafone UK: NetworkManager connects at boot; with Wi-Fi off, ping, DNS and an HTTPS download over LTE; Wi-Fi off and on keeps it working; the NetworkManager WWAN switch (the Phosh mobile data toggle) off and on reconnects | ModemManager with the kernel rmnet driver. See [hardware/modem.md](hardware/modem.md). |
+| Mobile data (LTE) | A data-only roaming IoT SIM on a UK network: NetworkManager connects at boot; with Wi-Fi off, ping, DNS and an HTTPS download over LTE; Wi-Fi off and on keeps it working; the NetworkManager WWAN switch (the Phosh mobile data toggle) off and on reconnects | ModemManager with the kernel rmnet driver. See [hardware/modem.md](hardware/modem.md). |
 | SMS | Sent to and received from the SIM provider's number with `mmcli` | Chatty not tested. |
 | Speakers, internal microphone | Playback and recording through PulseAudio and PipeWire; a test tone heard in a Phosh session; speaker level measured with a microphone | Speaker protection DSP is bypassed; amp gain and volume are the stock values. With PipeWire, a speaker-only limiter makes the speaker 4-6 dB louder from 40 % volume up (device-google-bramble-pipewire). |
 | Headphones, with automatic switching (PipeWire) | Plugging in and unplugging headphones moves playback between headphones and speaker without user action; tone heard in each | With PulseAudio the ports are detected but playback does not switch, see "Audio server" below. |
@@ -52,7 +52,8 @@ the [hardware notes](hardware/README.md).
   write 0 to `double_tap_wake` in the same directory.
 - With the roaming test SIM, mobile data can take about 2.5 minutes to
   come up after boot or after the mobile data toggle: the modem first
-  tries networks that reject the SIM (2G, O2) before Vodafone LTE.
+  tries networks that reject the SIM (2G and another operator) before it
+  finds LTE.
   NetworkManager then connects without help.
 - The flash LED's camera nodes are renamed to `led:strobe_N`; nothing in
   userspace uses them.
@@ -79,7 +80,7 @@ the [hardware notes](hardware/README.md).
 - GNOME Calls' dial pad drops digits when typing fast. The touch stack
   delivers every tap (checked against the kernel events, and a plain GTK
   keypad registers all of them), so this is a Calls/libcall-ui issue.
-- The data-only IoT test SIM (Simbase) drops bursts of full-size packets,
+- The data-only IoT test SIM drops bursts of full-size packets,
   so some sites load slowly or not at all (DuckDuckGo). Captures on the
   phone show that the large packets never arrive; the cause is most
   likely the SIM's network, not the port.

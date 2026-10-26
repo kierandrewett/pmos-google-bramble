@@ -49,6 +49,24 @@ pmbootstrap build device-google-bramble
 Bump `pkgrel` for every change you install on a phone, so `apk` sees a new
 version. A kernel build takes about 10-15 minutes, Mesa about 15-25.
 
+## Where the sources come from
+
+Nothing is built from a private location. `pmbootstrap checksum --verify`
+(part of `scripts/ci.sh`) downloads every source and compares its checksum.
+
+| Part | Source |
+|---|---|
+| Kernel | LineageOS `android_kernel_google_redbull`, pinned by commit in `linux-google-bramble`, plus the patches in that directory. |
+| Mesa turnip | The Mesa release tarball from `archive.mesa3d.org`, plus a KGSL patch. |
+| Android system image for the HAL container | The Halium 14 GSI, from the Droidian package repository (`halium-gsi-34`). If that URL goes away, the build stops at the download: host the file and change `source=`. |
+| Camera helpers (`bramble-camera-ndk`, `bramble-camera-proxy`) | Committed as binaries in `bramble-android-hal`. Their source is in `tools/android-helpers/`; rebuild with the Android NDK (`tools/android-helpers/build.sh`). |
+| Firmware (modem, Wi-Fi, audio DSP, GPU, touch) | Not in this repository. `msm-firmware-loader` reads it from your own phone's stock vendor partition at boot, which is why the stock Android 14 build must be on the phone ([install.md](install.md)). |
+| Everything else | Release tarballs from the projects' own sites (see `source=` in each APKBUILD). |
+
+The port tracks postmarketOS edge, which moves. `temp/phoc`, `temp/gmobile`
+and the other forks are copies of Alpine packages at one version. If edge
+moves Phosh to a new release, rebase `temp/phoc` (the two must match).
+
 ## Test on a running phone
 
 Install a rebuilt package over USB networking:

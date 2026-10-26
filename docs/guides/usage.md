@@ -9,7 +9,8 @@ What the phone is like in general is in [experience.md](../experience.md).
   with the password from the install step, then connect to Wi-Fi from the top
   bar.
 - SSH over USB: the phone is `172.16.42.1` while it is in developer mode.
-  `ssh user@172.16.42.1`.
+  `ssh <username>@172.16.42.1`, with the username you gave `pmbootstrap init`
+  (the examples in these docs write `user`, the pmbootstrap default).
 - File transfer: switch the USB mode to MTP (below), then the phone appears
   in your file manager.
 
