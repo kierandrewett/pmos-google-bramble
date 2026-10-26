@@ -60,7 +60,7 @@ Answer the questions like this:
 | Vendor | `google` |
 | Device codename | `bramble` |
 | User interface | `phosh` |
-| systemd | `never` (the port uses OpenRC services) |
+| Which init system | `openrc` (the port uses OpenRC services; the Phosh default would be systemd) |
 | Provider for `postmarketos-base-ui-audio-backend` | `pipewire`. The default, PulseAudio, plays but does not switch to headphones; see [status.md](../status.md). |
 | Provider for `postmarketos-base-ui-wifi` | the default, `wpa_supplicant` |
 | Username, hostname, locale, timezone | your choice |
