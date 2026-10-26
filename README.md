@@ -1,46 +1,70 @@
-# postmarketOS for the Google Pixel 4a (5G) (bramble)
+# Google Pixel 4a (5G) (google-bramble)
 
-A [postmarketOS](https://postmarketos.org) port for the Pixel 4a (5G),
-codename `google-bramble` (Snapdragon 765G, SM7250). It runs Phosh on the
-downstream Linux 4.19 vendor kernel, with GPU acceleration, Wi-Fi, mobile
-data, audio, all three cameras and the fingerprint reader.
+A [postmarketOS](https://postmarketos.org) port for the Google Pixel 4a
+(5G). It runs Phosh on the downstream Linux 4.19 vendor kernel.
 
-This is a community port, not part of the official postmarketOS
-repositories. Expect rough edges. It is not the Pixel 4a (`sunfish`).
+This is a community port. It is not in the official postmarketOS
+repositories, so it is a *downstream* device (see the
+[postmarketOS device categories](https://wiki.postmarketos.org/wiki/Device_categorization)).
+It is not the Pixel 4a (`sunfish`).
 
-## What it is like to use
+## Device
 
-You get a Linux phone with the Phosh shell. The lock screen takes a PIN, or
-a finger on the reader. A tap wakes the screen. The home screen has a
-4-column app grid, and the screen turns with the phone. Camera (GNOME
-Snapshot) uses the main, ultrawide and front cameras for photos at full
-resolution and for video, and the photos open in Image Viewer. Mobile data
-(LTE), SMS, GPS, Wi-Fi and Bluetooth work. A PC sees the phone over USB as
-an SSH host, an MTP drive and an adb device, and the stock `scrcpy` mirrors
-its screen.
+| | |
+|---|---|
+| Manufacturer | Google |
+| Name | Pixel 4a (5G) |
+| Codename | `google-bramble` (Android codename `bramble`) |
+| Released | 2020 |
+| Type | Handset |
+| SoC | Qualcomm Snapdragon 765G (SM7250), `aarch64` |
+| RAM and storage | 6 GB, 128 GB |
+| Display | 6.2 inch OLED, 1080x2340, 60 Hz |
+| Cameras | Main, ultrawide, front |
+| Kernel | Downstream Linux 4.19 (LineageOS `android_kernel_google_redbull`) |
+| User interface | Phosh |
+| Init system | OpenRC |
+| Category | Downstream |
 
-The full walk-through, with the numbers and the limits, is in
+## Features
+
+"Works" means it was tested on a phone. [docs/status.md](docs/status.md)
+says how each item was checked and lists the known problems.
+
+| Feature | Status | Notes |
+|---|---|---|
+| Display, touch, Phosh | Works | GPU acceleration with Mesa turnip on KGSL. |
+| Auto-rotate, auto-brightness | Works | Accelerometer and light sensor through iio-sensor-proxy. |
+| Wi-Fi | Works | |
+| Bluetooth | Works | Pairing, audio. Each phone gets its own address. |
+| Mobile data (LTE), SMS | Works | Tested with a data-only SIM. |
+| GPS | Works | Switch Location on in Settings. |
+| Audio: speakers, microphone, headphones | Works | Use PipeWire. PulseAudio does not switch to headphones. |
+| Cameras: main, ultrawide, front | Works | Full-resolution photos and video in Snapshot. No flash, no HDR+. |
+| Battery and charging | Works | |
+| USB networking (SSH), MTP | Works | |
+| adb and screen mirroring | Works | Packaged `adbd`; the stock `scrcpy` client works. |
+| Vibration, torch, tap to wake | Works | |
+| Fingerprint reader | Partial | Enrol and verify work. Unlock with a real finger is not yet seen. |
+| Suspend | Partial | Not verified with USB unplugged. |
+| Voice calls | Untested | The test SIM is data only. |
+| Proximity blank during calls | Untested | Needs a call. |
+
+The full walk-through of daily use is in
 [docs/experience.md](docs/experience.md).
 
-## Status
+## Installation
 
-| Works | Partly | Not tested |
-|---|---|---|
-| Display, touch, Phosh, auto-rotate, auto-brightness | Suspend: works in principle, not verified with USB unplugged | Voice calls (the test SIM is data only) |
-| GPU acceleration (60 fps) | Fingerprint: enrol and verify work; unlock with a real finger is not yet seen | Proximity blank during calls |
-| Cameras: main, ultrawide, front; photos and video | | |
-| Wi-Fi, Bluetooth | | |
-| Mobile data (LTE), SMS, GPS | | |
-| Speakers, microphone, headphones | | |
-| Battery and charging | | |
-| USB networking (SSH), MTP, adb, scrcpy | | |
-| Vibration, torch, tap to wake | | |
+Installing wipes the phone. You need:
 
-How each item was checked, and the known problems: [docs/status.md](docs/status.md).
-
-## Install
-
-Follow [docs/guides/install.md](docs/guides/install.md). In short:
+- A Pixel 4a (5G) with an unlockable bootloader, on the final stock
+  firmware (Android 14, `UP1A.231105.001.B2`) with the stock `dtbo`. The
+  port reads the modem, Wi-Fi, audio DSP and GPU firmware from the stock
+  vendor partition.
+- A Linux PC with `git`, `fastboot` and
+  [pmbootstrap](https://wiki.postmarketos.org/wiki/Pmbootstrap) 3.11 or
+  newer, and about 15 GB of free disk space. The first build compiles the
+  kernel and Mesa, which takes 30 to 60 minutes or more.
 
 ```sh
 git clone https://github.com/kierandrewett/pmos-google-bramble.git
@@ -48,65 +72,67 @@ cd pmos-google-bramble
 scripts/setup-pmaports.sh
 pmbootstrap --aports "$PWD/build/pmaports" init   # answers: docs/guides/install.md
 pmbootstrap install
-# phone in fastboot (Power + Volume Down):
+```
+
+Then put the phone in fastboot (Power + Volume Down) and flash:
+
+```sh
 pmbootstrap flasher flash_vbmeta
 pmbootstrap flasher flash_kernel
 pmbootstrap flasher flash_vendorboot
 pmbootstrap flasher flash_rootfs
+fastboot reboot
 ```
 
-The phone must be on the final stock firmware (Android 14,
-`UP1A.231105.001.B2`) with the stock `dtbo`, and its bootloader must be
-unlocked. Installing wipes the phone.
-
-To go back to Android: [docs/guides/recovery.md](docs/guides/recovery.md).
+Do not flash `dtbo`. The full steps, including how to prepare the phone,
+are in [docs/guides/install.md](docs/guides/install.md). To go back to
+Android, read [docs/guides/recovery.md](docs/guides/recovery.md).
 
 ## Repository layout
 
+This repository is an overlay for pmaports. `pmaports/` holds only the
+packages for this phone, in pmaports layout. `scripts/setup-pmaports.sh`
+clones pmaports at the tested commit and copies these packages into it.
+
 ```
-pmaports/     the packages, in pmaports layout (the source of truth)
-  device/downstream/   device, kernel, Android HAL container, fingerprint, sensors
+pmaports/
+  device/downstream/   device package, kernel, Android HAL container,
+                       fingerprint, sensors
   main/                packages that fit pmaports main
-  temp/                forks of Alpine packages, with bramble patches
-docs/         documentation (index: docs/README.md)
-  guides/              install, recovery, development
-  hardware/            how each part works; experiments
-scripts/      setup-pmaports.sh, CI checks (ci.sh)
-tools/        helpers that are not packages: Android NDK camera helpers, GNOME Shell probe
-build/        generated (git-ignored): the pmaports checkout and CI work
+  temp/                forks of Alpine packages with patches for this phone
+docs/                  documentation (start at docs/README.md)
+scripts/               setup-pmaports.sh and the CI checks (ci.sh)
+tools/                 helpers that are not packages
+build/                 generated, ignored by git: the pmaports checkout
 ```
 
-This is an overlay for pmaports: `pmaports/` holds only the bramble
-packages, with their full history. `scripts/setup-pmaports.sh` puts them
-into a pmaports checkout (pinned to the tested commit) in `build/pmaports`.
-The package list is in [pmaports/README.md](pmaports/README.md); how to
-change and test them is in [docs/guides/development.md](docs/guides/development.md).
+The package list is in [pmaports/README.md](pmaports/README.md). To change
+and test the packages, read
+[docs/guides/development.md](docs/guides/development.md).
 
 ## Documentation
 
-Start at [docs/README.md](docs/README.md).
-
 | Document | Contents |
 |---|---|
-| [experience.md](docs/experience.md) | What daily use is like. |
-| [status.md](docs/status.md) | What works, what does not, known problems. |
-| [guides/install.md](docs/guides/install.md) | Prepare the phone, build, flash. |
-| [guides/usage.md](docs/guides/usage.md) | adb and scrcpy, camera, fingerprint, services you can turn off. |
-| [guides/recovery.md](docs/guides/recovery.md) | Backups, unbricking, return to stock. |
-| [guides/development.md](docs/guides/development.md) | Change, build and test the packages. |
-| [hardware/](docs/hardware/README.md) | How each part works and why: boot, GPU, Wi-Fi, modem, audio, input, camera, sensors, fingerprint. |
+| [docs/status.md](docs/status.md) | What works, what does not, known problems. |
+| [docs/experience.md](docs/experience.md) | What daily use is like. |
+| [docs/guides/install.md](docs/guides/install.md) | Prepare the phone, build, flash. |
+| [docs/guides/usage.md](docs/guides/usage.md) | adb and scrcpy, camera, fingerprint, services you can turn off. |
+| [docs/guides/recovery.md](docs/guides/recovery.md) | Backups, unbricking, return to stock. |
+| [docs/guides/development.md](docs/guides/development.md) | Change, build and test the packages. |
+| [docs/hardware/](docs/hardware/README.md) | How each part works and why. |
 
-## Credits
+## Contributors
 
 - Yurii Bishchuk ([YuriiBishchuk/pmaports](https://github.com/YuriiBishchuk/pmaports))
-  started the google-bramble port; this repository continues it.
-- The kernel is LineageOS
+  started the google-bramble port. This repository continues it.
+- The kernel comes from LineageOS
   [`android_kernel_google_redbull`](https://github.com/LineageOS/android_kernel_google_redbull).
-- [postmarketOS](https://postmarketos.org) and pmbootstrap, Alpine Linux,
-  Mesa (turnip), Phosh and gmobile.
+- This port builds on [postmarketOS](https://postmarketos.org),
+  pmbootstrap, Alpine Linux, Mesa (turnip), Phosh and gmobile.
 
 ## License
 
 GPL-3.0, like pmaports (see [LICENSE](LICENSE)). Each package states its
-own licence in its APKBUILD; the kernel patches are GPL-2.0, the
-license of the kernel.
+license in its APKBUILD. The kernel patches are GPL-2.0, the license of
+the kernel.
