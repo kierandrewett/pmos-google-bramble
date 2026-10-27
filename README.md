@@ -48,7 +48,7 @@ says how each item was checked and lists the known problems.
 | adb and screen mirroring | Works | Packaged `adbd`; the stock `scrcpy` client works. |
 | Vibration, torch, tap to wake | Works | |
 | Fingerprint reader | Partial | Enrol and verify work. Unlock with a real finger is not yet seen. |
-| Suspend | Partial | Not verified with USB unplugged. |
+| Suspend | Partial | Works with the cable out and the session survives. The modem wakes the phone every few seconds, and a wake by the power button, a touch or the fingerprint reader is not yet seen. |
 | Proximity blank during calls | Untested | Needs a call. |
 
 The full walk-through of daily use is in

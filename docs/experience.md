@@ -96,7 +96,7 @@ a private container, for the cameras and the fingerprint reader.
 
 The full list is in [status.md](status.md). The ones you notice most:
 
-- The speaker button in Calls is not tested on its own; no suspend test with the cable out.
+- The speaker button in Calls is not tested on its own.
 - No Google Camera features: flash, HDR+, night mode.
 - Some sites load slowly or not at all on the data-only test SIM. The large
   packets never arrive; the cause is most likely the SIM's network.

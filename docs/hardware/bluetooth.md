@@ -21,7 +21,8 @@ BlueZ gets `hci0`:
 - 0019 lets the UART suspend. The downstream `msm_geni_serial` driver
   waits for the HAL's clock vote ioctls before it suspends a port; a port
   held by `hci_qca` never got them and blocked suspend in the noirq
-  phase. Not yet verified with USB unplugged.
+  phase. With the patch, suspend completes with Bluetooth on (`hci0` up) and
+  the cable out.
 
 The NVM file sets a fixed address, `39:98:00:00:5A:AD`, the same on every
 phone (Android sets the real one from the HAL). 0022 makes the controller
