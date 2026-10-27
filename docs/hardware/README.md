@@ -17,7 +17,7 @@ console), so every driver here is the Qualcomm/Google downstream one.
 | [boot.md](boot.md) | Partitions, boot chain, device tree. |
 | [display-gpu.md](display-gpu.md) | Display panel, Adreno GPU through KGSL, Mesa turnip and zink, animation speed. |
 | [wifi.md](wifi.md) | Wi-Fi (WCN3991 and the modem's WLAN firmware). |
-| [modem.md](modem.md) | Mobile data, SMS and GPS through ModemManager. |
+| [modem.md](modem.md) | Mobile data, SMS, voice calls (VoLTE) and GPS through ModemManager. |
 | [audio.md](audio.md) | Speakers, microphone, headphones, PipeWire and PulseAudio. |
 | [bluetooth.md](bluetooth.md) | Bluetooth controller and audio. |
 | [input-usb.md](input-usb.md) | Touch, tap to wake, haptics, torch, USB gadget modes, adb and scrcpy. |

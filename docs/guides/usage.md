@@ -102,6 +102,16 @@ tap.
   off by default.
 - Mobile data: with a roaming SIM it can take about 2.5 minutes to come up
   after boot.
+- Calls and SMS: they use VoLTE. Calls from the Calls app and SMS from
+  `mmcli` were tested; incoming calls, incoming SMS and Chatty were not.
+  The SIM needs VoLTE on its plan, and the network must support it. Three UK
+  has no 2G or 3G fallback, so VoLTE is the only way there. The first time a
+  SIM is in the phone, `bramble-mcfg` selects the modem's carrier
+  configuration for it. That restarts the modem once: mobile data and calls
+  drop, Wi-Fi is back after about 10 s, and the modem is back after about a
+  minute.
+- RCS (chat features in Google Messages) does not work. MMS through
+  `mmsd-tng` has not been tested.
 
 ## Updating
 
