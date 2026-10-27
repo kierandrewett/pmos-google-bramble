@@ -4,7 +4,7 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 pkgname=tqftpserv
 _pkgver=1.3
 pkgver=9999$_pkgver
-pkgrel=0
+pkgrel=1
 pkgdesc="Trivial File Transfer Protocol server over AF_QIPCRTR"
 url="https://github.com/linux-msm/tqftpserv"
 arch="all"
@@ -12,6 +12,7 @@ license="BSD-3-Clause"
 makedepends="meson qrtr-dev zstd-dev"
 source="https://github.com/linux-msm/tqftpserv/archive/v$_pkgver/tqftpserv-v$_pkgver.tar.gz
 	0001-translate-fall-back-to-the-firmware-path-without-remoteproc.patch
+	0002-translate-serve-the-vendor-mbn-directory.patch
 	tqftpserv.initd
 	"
 subpackages="$pkgname-doc $pkgname-openrc"
@@ -32,5 +33,6 @@ package() {
 sha512sums="
 1e43ef53633baf8b06132dc84bf8274ab9cf96c7d5c4c99b31d908f03ed6e90fc1a67ade76220ef2ed87eac8be50f5ac2de554ec3a604f026054ba6609364a74  tqftpserv-v1.3.tar.gz
 c8626e55d52c6a8de179df7276202fb62c6a82e1f78a585635dc82fa962c977f1b90bbdbcad156e9e70efcf93ba7f3d77ba58593d5ce2bf7c22dc3f2e71bf7c8  0001-translate-fall-back-to-the-firmware-path-without-remoteproc.patch
+e323c7d1fef5408b2e066e41c54e41537dd464472fc4b9148af01d4a5d3e0fe0081183f46f93dfa40560f2283d7e30f6791c15bc0061987595c65dca67f275e8  0002-translate-serve-the-vendor-mbn-directory.patch
 9fde613a1ed53e633ab676e37245d40598deb4b6896c379054389adad5af9f110fcf95871fe31bad3f0ed9321ba3cee8a2160b95e56873719382f81063a85721  tqftpserv.initd
 "

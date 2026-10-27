@@ -1,0 +1,28 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] translate: serve /readonly/vendor/mbn/ from the firmware path
+
+The modem's MCFG task reads its carrier configuration (mbn_sw.dig,
+mbn_hw.dig and the mcfg_sw.mbn files they list) from /readonly/vendor/mbn/.
+Without it the modem has no carrier config, so it does not enable VoLTE or
+the carrier's IMS settings. Look these up in the firmware search path under
+mbn/, the same way as the other read-only files.
+
+--- a/translate.c
++++ b/translate.c
+@@ -26,6 +26,7 @@
+ #define READONLY_MODEM_PATH	READONLY_FW_BASE "modem_pr"
+ #define READONLY_VENDOR_PATH		"/readonly/vendor/firmware/"
+ #define READONLY_VENDOR_MNT_PATH	"/readonly/vendor/firmware_mnt/image/"
++#define READONLY_VENDOR_MBN_PATH	"/readonly/vendor/mbn/"
+ 
+ #ifndef ANDROID
+ #define FIRMWARE_BASE	"/lib/firmware/"
+@@ -290,6 +291,8 @@
+ 		return translate_readonly(path + strlen(READONLY_VENDOR_MNT_PATH));
+ 	else if (!strncmp(path, READONLY_VENDOR_PATH, strlen(READONLY_VENDOR_PATH)))
+ 		return translate_readonly(path + strlen(READONLY_VENDOR_PATH));
++	else if (!strncmp(path, READONLY_VENDOR_MBN_PATH, strlen(READONLY_VENDOR_MBN_PATH)))
++		return translate_readonly(path + strlen("/readonly/vendor/"));
+ 
+ 	fprintf(stderr, "invalid path %s, rejecting\n", path);
+ 	errno = ENOENT;
