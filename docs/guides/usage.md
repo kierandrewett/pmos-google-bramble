@@ -111,8 +111,11 @@ tap.
   configuration for it. That restarts the modem once: mobile data and calls
   drop, Wi-Fi is back after about 10 s, and the modem is back after about a
   minute.
-- RCS (chat features in Google Messages) does not work. MMS through
-  `mmsd-tng` has not been tested.
+- RCS (chat features in Google Messages) does not work.
+- MMS: the data connection must use your carrier's APN, because `mmsd-tng`
+  sends MMS only over a bearer with the MMS APN (Smarty: `mob.asm.net`, set
+  with `nmcli c mod <profile> gsm.apn mob.asm.net`). `bramble-mms` sets the
+  MMS server and proxy for the SIM. See [modem.md](../hardware/modem.md).
 
 ## Updating
 
