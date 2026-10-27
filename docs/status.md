@@ -13,7 +13,8 @@ the [hardware notes](hardware/README.md).
 | GPU acceleration | Phosh renders with Mesa turnip and zink on KGSL | See [hardware/display-gpu.md](hardware/display-gpu.md). |
 | Wi-Fi | Daily use, SSH over Wi-Fi; switched off and on from Settings | Wakes the phone on incoming traffic (WoWLAN). Kernel patch 0018 makes polkit work, which the Wi-Fi switch in Settings needs. |
 | Mobile data (LTE) | A data-only roaming IoT SIM on a UK network: NetworkManager connects at boot; with Wi-Fi off, ping, DNS and an HTTPS download over LTE; Wi-Fi off and on keeps it working; the NetworkManager WWAN switch (the Phosh mobile data toggle) off and on reconnects | ModemManager with the kernel rmnet driver. See [hardware/modem.md](hardware/modem.md). |
-| SMS | Sent to and received from the SIM provider's number with `mmcli` | Chatty not tested. |
+| SMS | Sent over VoLTE (SMS over IMS) from the phone to two UK mobile numbers with `mmcli`; the Smarty SIM is on Three, which has no circuit-switched fallback, so this needs the whole VoLTE stack (see [hardware/modem.md](hardware/modem.md)) | Receiving and Chatty are not tested. MMS is not tested (`mmsd-tng` is installed, the APN is not set up). RCS is not supported. |
+| Voice calls (VoLTE) | Outgoing calls to two UK mobile numbers, started with `mmcli` and from the Calls app: the call rings and is answered, and the person called and the person holding the phone hear each other on the earpiece route. Checked after a reboot, with `bramble-voiced` and `bramble-mcfg` started by OpenRC | `81voltd`, kernel patch 0026, the modem's carrier configuration (`bramble-mcfg`) and the voice audio path (`bramble-voiced`, `bramble-acdb`). Incoming calls, the speaker route, the headset, the call volume and Bluetooth audio are not tested. |
 | Speakers, internal microphone | Playback and recording through PulseAudio and PipeWire; a test tone heard in a Phosh session; speaker level measured with a microphone | Speaker protection DSP is bypassed; amp gain and volume are the stock values. With PipeWire, a speaker-only limiter makes the speaker 4-6 dB louder from 40 % volume up (device-google-bramble-pipewire). |
 | Headphones, with automatic switching (PipeWire) | Plugging in and unplugging headphones moves playback between headphones and speaker without user action; tone heard in each | With PulseAudio the ports are detected but playback does not switch, see "Audio server" below. |
 | Battery and charging | Charge level and charging state in Phosh | |
@@ -40,7 +41,7 @@ the [hardware notes](hardware/README.md).
 
 | Feature | Why |
 |---|---|
-| Voice calls | Not tested: the test SIM is data only. |
+| RCS | Not supported. UK carriers use Google's Jibe, and registering needs Google Play services (a DroidGuard check) that this stack cannot give. |
 
 ## Known problems
 

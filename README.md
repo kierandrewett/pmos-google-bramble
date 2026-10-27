@@ -37,7 +37,9 @@ says how each item was checked and lists the known problems.
 | Auto-rotate, auto-brightness | Works | Accelerometer and light sensor through iio-sensor-proxy. |
 | Wi-Fi | Works | |
 | Bluetooth | Works | Pairing, audio. Each phone gets its own address. |
-| Mobile data (LTE), SMS | Works | Tested with a data-only SIM. |
+| Mobile data (LTE) | Works | |
+| SMS, voice calls | Partial | Outgoing SMS and calls over VoLTE work on a Three UK SIM. Incoming, MMS and the speaker button are not tested. |
+| RCS | Not supported | Needs Google Play services. |
 | GPS | Works | Switch Location on in Settings. |
 | Audio: speakers, microphone, headphones | Works | Use PipeWire. PulseAudio does not switch to headphones. |
 | Cameras: main, ultrawide, front | Works | Full-resolution photos and video in Snapshot. No flash, no HDR+. |
@@ -47,7 +49,6 @@ says how each item was checked and lists the known problems.
 | Vibration, torch, tap to wake | Works | |
 | Fingerprint reader | Partial | Enrol and verify work. Unlock with a real finger is not yet seen. |
 | Suspend | Partial | Not verified with USB unplugged. |
-| Voice calls | Untested | The test SIM is data only. |
 | Proximity blank during calls | Untested | Needs a call. |
 
 The full walk-through of daily use is in

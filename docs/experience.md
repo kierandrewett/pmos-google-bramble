@@ -57,9 +57,11 @@ a private container, for the cameras and the fingerprint reader.
 
 - Mobile data over LTE works, and reconnects after Wi-Fi is switched off and
   on. With a roaming SIM, it can take about 2.5 minutes to come up after boot.
-- SMS was sent and received with `mmcli`. The Chatty app has not been
-  tested.
-- Voice calls have not been tested, because the test SIM is data only.
+- SMS is sent over VoLTE (checked with `mmcli`); receiving and the Chatty
+  app have not been tested.
+- Voice calls over VoLTE connect and carry audio both ways on the earpiece
+  (outgoing, tested to two mobile numbers). Incoming calls and the speaker
+  button have not been tested. RCS chat features are not supported.
 - GPS gets a fix and geoclue reports it. Apps get a position only when
   Location is on in Settings (off by default).
 
@@ -93,7 +95,7 @@ a private container, for the cameras and the fingerprint reader.
 
 The full list is in [status.md](status.md). The ones you notice most:
 
-- No voice call test, no suspend test with the cable out.
+- Incoming calls and SMS, and the speaker button in Calls, are not tested; no suspend test with the cable out.
 - No Google Camera features: flash, HDR+, night mode.
 - Some sites load slowly or not at all on the data-only test SIM. The large
   packets never arrive; the cause is most likely the SIM's network.
