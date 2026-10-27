@@ -1,0 +1,27 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: allow SO_BINDTODEVICE on a socket that is not bound yet, without CAP_NET_RAW
+
+Mainline has allowed this since 5.7 (commit c427bfec18f2, "net: core: enable
+SO_BINDTODEVICE for non-root users"). A process can bind a socket that is
+not bound to a device yet. Only a change of an existing binding, or the
+removal of it, needs CAP_NET_RAW.
+
+This kernel still has the old check in sock_bindtoindex_locked(), so every
+SO_BINDTODEVICE from an ordinary user fails with EPERM. mmsd-tng binds its
+DNS queries and its HTTP requests to the interface of the MMS bearer. With
+the EPERM, the DNS queries left on Wi-Fi and timed out, and no MMS could
+be downloaded or sent. Programs written for a current kernel assume that
+this works, so fix the kernel instead of giving each program a capability.
+
+---
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -571,7 +571,7 @@
+ 
+ 	/* Sorry... */
+ 	ret = -EPERM;
+-	if (!ns_capable(net->user_ns, CAP_NET_RAW))
++	if (sk->sk_bound_dev_if && !ns_capable(net->user_ns, CAP_NET_RAW))
+ 		goto out;
+ 
+ 	ret = -EINVAL;
