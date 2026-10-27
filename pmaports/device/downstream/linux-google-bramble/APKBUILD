@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=35
+pkgrel=36
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -60,6 +60,7 @@ source="
 	0023-proc-look-up-the-superblock-in-the-user-namespace-of-the-pid-namespace.patch
 	0024-mm-allow-read-only-shared-mappings-of-write-sealed-memfds.patch
 	0025-input-fts_touch-wake-only-once-per-screen-off.patch
+	0026-net-qrtr-accept-new-server-messages-with-zero-node-and-port.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -138,4 +139,5 @@ c8a725eb9089b41d11ab0bc9a4f5481d11fe9bda18b20a7d212b8c02dac0806ffceeb013b4c96c56
 2bc441d2f9fb557ac33020b30c6e9614607bfa43877ef2ff4004e8f4581eecdf46a297b457fd18ed28b1b5dd8febc47971d604d3f8fdecb5d8b96ade691bc41b  0023-proc-look-up-the-superblock-in-the-user-namespace-of-the-pid-namespace.patch
 6b17aa02359519cc2937c6490911d536e26cce48fda11d275c6d76f5645e108120ca756df820880f87f07d40e54a169f496cc25344a32a604ed2e48b88b34a5e  0024-mm-allow-read-only-shared-mappings-of-write-sealed-memfds.patch
 4d021f133f00cad71100aafeed040fe304e7720aff4a8912e25d9f1d6376b915dca876a6f4ffb79dd4988c18c0922c532584b63e4668689e3a1bdb7771de831c  0025-input-fts_touch-wake-only-once-per-screen-off.patch
+6fdba3aac435a0ee69504217a12659300d579a27da2b877391a373c418d8ce389f88dcf57b6d588223f3127119b9552a14723c28a677510d8fa7b520e8aab1db  0026-net-qrtr-accept-new-server-messages-with-zero-node-and-port.patch
 "

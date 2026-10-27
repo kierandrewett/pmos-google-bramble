@@ -1,0 +1,42 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] net: qrtr: accept new-server messages with zero node and port from local sockets
+
+libqrtr's qrtr_new_server() sends QRTR_TYPE_NEW_SERVER with the node and
+port fields at zero and leaves it to the name service to use the sender's
+address. The mainline kernel name service does that. This kernel checks the
+message in qrtr_sendmsg() first: it looks up the server node, and node 0 is
+the modem here, so the message is "not forwardable" and is dropped without
+an error (sendto() returns 0).
+
+Programs that publish a service this way never show up in qrtr-lookup. This
+stopped 81voltd, the IMS Data service that the modem needs before it brings
+up VoLTE, from registering. Fill in the sender's node and port when both are
+zero and the message goes to the local name service.
+
+---
+--- a/net/qrtr/qrtr.c
++++ b/net/qrtr/qrtr.c
+@@ -1741,8 +1741,22 @@
+ 	if (addr->sq_port == QRTR_PORT_CTRL && type == QRTR_TYPE_NEW_SERVER) {
+ 		ipc->state = QRTR_STATE_MULTI;
+ 
++		skb_copy_bits(skb, 0, &pkt, sizeof(pkt));
++
++		/* libqrtr (qrtr_new_server) leaves the node and port of a
++		 * local server at zero and relies on the name service to
++		 * fill them in, as the mainline kernel name service does.
++		 * Zero is the modem's node here, so the check below would
++		 * drop the message. Describe the sender instead.
++		 */
++		if (addr->sq_node == ipc->us.sq_node &&
++		    !pkt.server.node && !pkt.server.port) {
++			pkt.server.node = cpu_to_le32(ipc->us.sq_node);
++			pkt.server.port = cpu_to_le32(ipc->us.sq_port);
++			skb_store_bits(skb, 0, &pkt, sizeof(pkt));
++		}
++
+ 		/* drop new server cmds that are not forwardable to dst node*/
+-		skb_copy_bits(skb, 0, &pkt, sizeof(pkt));
+ 		srv_node = qrtr_node_lookup(le32_to_cpu(pkt.server.node));
+ 		if (!qrtr_must_forward(srv_node, node, type)) {
+ 			rc = 0;
