@@ -10,8 +10,8 @@
 # - load the IPA firmware ("write /dev/ipa 1" in init.sm7250.rc); the
 #   qcacld WLAN driver fails to probe (-EFAULT) without IPA
 # - keep /dev/subsys_modem open, which powers the modem up (vendor per_mgr)
-# - send the WLAN board data file to the firmware (vendor cnss-daemon); only
-#   then does the firmware report FW_READY and qcacld creates wlan0
+# - the WLAN board data file goes to the firmware from bramble-wlfw (vendor
+#   cnss-daemon); only then does it report FW_READY and qcacld create wlan0
 # qrtr-ns, pd-mapper and tqftpserv must already run (see depend).
 
 name="bramble-modem"
@@ -34,11 +34,6 @@ start() {
 	start-stop-daemon -S -b -m -p "$rmtfs_pidfile" -x /usr/bin/rmtfs -- -P
 	start-stop-daemon -S -b -m -p "$hold_pidfile" -x /bin/sh -- \
 		-c 'exec sleep 2147483647 < /dev/subsys_modem'
-	# One-shot helper that waits up to 60 s for the WLAN firmware service.
-	# Run it as a plain background job: OpenRC marks the service "crashed"
-	# when a process started with start-stop-daemon exits.
-	( /usr/libexec/bramble-wlfw-bdf 2>&1 | logger -t bramble-wlfw-bdf ) \
-		< /dev/null > /dev/null 2>&1 &
 	eend $?
 }
 

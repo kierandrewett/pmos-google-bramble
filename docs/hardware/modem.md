@@ -72,7 +72,13 @@ Four things were missing, and each has a package or patch here:
    on this modem. The modem stores few configurations; if a load fails,
    `bramble-mcfg` deletes other carriers' ones (never `SW_DEFAULT`,
    `WildCard`, `WildCard_IMS`, `Global`). Stock Android loads a missing one
-   again when it needs it.
+   again when it needs it. Activating a configuration restarts the modem on
+   purpose (dmesg: "Intentionally crash with err fatal for MCFG
+   activation"). This happens once, at the first boot with a SIM, or when
+   the SIM changes. Mobile data, calls and Wi-Fi drop, and ModemManager
+   needs about a minute to find the modem again. `bramble-wlfw` sends the
+   board data to the WLAN firmware again, so Wi-Fi is back after about
+   10 s (see [wifi.md](wifi.md)).
 4. **Voice audio (`bramble-voiced`).** See below.
 
 SMS sends with `mmcli -m any --messaging-create-sms="text='hello',number='+44...'"`

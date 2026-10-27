@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# Pixel 4a (5G): send the WLAN board data file to the WLAN firmware each time
+# the firmware starts, at boot and after every modem restart. See
+# bramble-wlfw-bdf. It starts before bramble-modem to be ready when the
+# firmware appears, but it also works when it starts later.
+supervisor=supervise-daemon
+name="bramble-wlfw"
+description="Send the WLAN board data to the Pixel 4a (5G) WLAN firmware"
+
+command=/usr/libexec/bramble-wlfw-bdf
+output_logger="logger -t bramble-wlfw"
+error_logger="logger -t bramble-wlfw"
+
+depend() {
+	need qrtr-ns
+	after bramble-firmware
+	before bramble-modem
+}

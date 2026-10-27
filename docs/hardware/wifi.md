@@ -10,10 +10,16 @@ device-google-bramble repeats the stock Android start sequence:
 2. `tqftpserv` serves files to the modem. It is patched for kernels without
    the remoteproc class (temp/tqftpserv).
 3. `bramble-modem` sets the subsystem restart level to `related`, loads the
-   IPA firmware (`/dev/ipa`), runs `rmtfs -P`, holds `/dev/subsys_modem`
-   open and runs `bramble-wlfw-bdf`. That helper sends the board data file
-   to the WLFW QMI service, the job of the vendor `cnss-daemon`.
-4. The firmware then reports `WLAN FW is ready` and qcacld creates
+   IPA firmware (`/dev/ipa`), runs `rmtfs -P` and holds `/dev/subsys_modem`
+   open.
+4. `bramble-wlfw` runs `bramble-wlfw-bdf`. It asks the QRTR name service
+   for the WLFW service and sends the board data file to it, the job of the
+   vendor `cnss-daemon`. This is a daemon and not a one-shot job: the WLAN
+   firmware starts again with every modem restart (a modem crash, or a
+   carrier configuration change, which restarts the modem on purpose), and
+   it needs the file each time. A modem restart takes Wi-Fi down for about
+   10 s, then it comes back and NetworkManager reconnects.
+5. The firmware then reports `WLAN FW is ready` and qcacld creates
    `wlan0`. NetworkManager ignores the extra `wlan1`, `p2p0` and
    `wifi-aware0` interfaces.
 
