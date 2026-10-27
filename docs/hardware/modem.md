@@ -134,6 +134,42 @@ RCS is not supported. Carriers in the UK use Google's Jibe, which needs
 Google Play services (a DroidGuard check) to register. It cannot run on this
 stack; see [status.md](../status.md).
 
+# Picture messages (MMS)
+
+`mmsd-tng` fetches and sends picture messages and Chatty shows them. The
+user session starts `mmsd-tng` (autostart entry of the `mmsd-tng`
+package). Three things were missing, and each has a package or patch here:
+
+1. **MMS settings (`bramble-mms`).** `mmsd-tng` needs the MMSC (the
+   carrier's MMS server), the MMS proxy and an APN. It looks them up once in
+   mobile-broadband-provider-info. That database has no entry for Smarty (an
+   MVNO on Three), so `mmsd-tng` stored the placeholders `http://mms.invalid`
+   and `apn.invalid` and did not answer any message notification.
+   `bramble-mms-settings` runs next to `mmsd-tng`. It reads the MCC and MNC of
+   the SIM, takes the MMSC and the proxy from the database entry for that
+   network (Three: `http://mms.um.three.co.uk:10021/mmsc`,
+   `mms.three.co.uk:8799`) and sets them through the `mmsd-tng` D-Bus API
+   (`org.ofono.mms.ModemManager.ChangeSettings`). It runs again when the SIM
+   or a data bearer changes.
+2. **The MMS APN.** `mmsd-tng` sends and fetches MMS only over a bearer
+   whose APN equals its `MMS_APN` setting. When the database lists the same
+   APN for internet and for MMS, `bramble-mms-settings` uses the APN of the
+   connected data bearer. The data profile in NetworkManager must therefore
+   use the carrier's APN. For Smarty that is `mob.asm.net`:
+   `nmcli c mod <profile> gsm.apn mob.asm.net`.
+3. **`SO_BINDTODEVICE` for ordinary users (kernel patch 0027).** `mmsd-tng`
+   binds its DNS queries and its HTTP requests to the interface of the data
+   bearer, because the MMS proxy is on a private network that only that
+   interface reaches. This kernel allowed the call only with `CAP_NET_RAW`,
+   so the DNS queries left on Wi-Fi and timed out. See
+   [kernel-fixes.md](kernel-fixes.md).
+
+Checks: `gdbus call --session --dest org.ofono.mms --object-path /org/ofono/mms
+--method org.ofono.mms.ModemManager.ViewSettings` shows the MMSC, the proxy
+and `MMS_APN` equal to the APN in `mmcli -b <bearer>`. `~/.local/share/chatty/mms/`
+holds the attachments of each message. To see what `mmsd-tng` does, stop it
+and run `mmsdtng -d` in the session.
+
 # GPS
 
 The GNSS engine is in the modem. ModemManager drives it through the QMI

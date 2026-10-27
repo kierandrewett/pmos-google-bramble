@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=MMS settings
+Comment=Give mmsd-tng the MMS settings of the inserted SIM
+Exec=/usr/libexec/bramble-mms-settings
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications

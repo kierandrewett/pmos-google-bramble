@@ -1,0 +1,33 @@
+# Picture messages (MMS) on the Pixel 4a (5G). mmsd-tng fetches and sends the
+# messages; this package gives it the MMSC, proxy and APN of the inserted SIM.
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=bramble-mms
+pkgver=1
+pkgrel=0
+pkgdesc="Google Pixel 4a (5G): MMS settings for the inserted SIM"
+url="https://github.com/kierandrewett/pmos-google-bramble"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	glib
+	mmsd-tng
+	mobile-broadband-provider-info
+	modemmanager
+	python3
+	"
+source="
+	bramble-mms-settings
+	bramble-mms-settings.desktop
+	"
+install_if="device-google-bramble mmsd-tng"
+options="!check" # Needs a phone with a SIM
+
+package() {
+	install -Dm755 "$srcdir"/bramble-mms-settings "$pkgdir"/usr/libexec/bramble-mms-settings
+	install -Dm644 "$srcdir"/bramble-mms-settings.desktop \
+		"$pkgdir"/etc/xdg/autostart/bramble-mms-settings.desktop
+}
+sha512sums="
+712735830f38cb0560b90ff965ef0b6695b92960c5df1edc56b834fe1322bd3c0d3af25f1050d7d2d714faf39b27ef7153b939eef1861513130841028269c69a  bramble-mms-settings
+78967944ffbb31ab323db80c3c0098447b749328ced9102a5eb89e7121c4795bbfc3c159eeae5254a79177e344ba9c0c4246be986110f91ef26eb222e66edf06  bramble-mms-settings.desktop
+"

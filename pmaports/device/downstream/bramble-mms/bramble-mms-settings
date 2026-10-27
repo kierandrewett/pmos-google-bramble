@@ -1,0 +1,207 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Give mmsd-tng the MMS settings of the inserted SIM.
+
+mmsd-tng needs three settings before it can fetch or send a picture message:
+the MMSC (the carrier's MMS server), the MMS proxy and the APN. It looks them
+up in mobile-broadband-provider-info once, when it first sees a SIM. When the
+lookup finds nothing it stores placeholders (http://mms.invalid, apn.invalid)
+and keeps them, so every message notification stays unanswered.
+
+This program runs in the user session next to mmsd-tng and does the lookup
+again, with two differences:
+
+* The MMSC and the proxy come from the provider database for the SIM's MCC
+  and MNC. A provider that lists the same APN for internet and for MMS uses
+  one bearer for both, so the MMS APN is the APN of the connected data
+  bearer. That is how an MVNO on a host network works: Smarty is on Three, it
+  has no entry of its own, and its data APN (mob.asm.net) is not the APN the
+  database lists for the host network.
+* It runs again when the SIM or the data bearer changes, so a SIM swap or a
+  new APN in Settings is picked up.
+
+mmsd-tng only sends MMS over a bearer whose APN equals its MMS_APN setting.
+"""
+import re
+import subprocess
+import sys
+import threading
+import time
+import xml.etree.ElementTree as ET
+
+DATABASE = "/usr/share/mobile-broadband-provider-info/serviceproviders.xml"
+DEBOUNCE = 5
+MMSD = ["--session", "--dest", "org.ofono.mms", "--object-path", "/org/ofono/mms"]
+EVENTS = ("'Connected'", "'Bearers'", "'Sim'", "'OperatorCode'", "InterfacesAdded", "InterfacesRemoved")
+
+
+def log(msg):
+    print("[bramble-mms] " + msg, file=sys.stderr, flush=True)
+
+
+def run(*cmd):
+    done = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    return done.returncode, done.stdout
+
+
+def keyvalues(text):
+    """Parse the output of mmcli -K into a dict."""
+    out = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(" : ")
+        if sep:
+            out[key.strip()] = value.strip()
+    return out
+
+
+def sim_operator():
+    """Return the MCC and MNC of the SIM's home network, or None."""
+    code, out = run("mmcli", "-m", "any", "-K")
+    if code:
+        return None
+    modem = keyvalues(out)
+    sim = modem.get("modem.generic.sim", "--")
+    if sim != "--":
+        code, out = run("mmcli", "-i", sim, "-K")
+        operator = keyvalues(out).get("sim.properties.operator-code", "--") if not code else "--"
+        if operator != "--":
+            return operator
+    operator = modem.get("modem.3gpp.operator-code", "--")
+    return None if operator == "--" else operator
+
+
+def data_apn():
+    """Return the APN of the connected data bearer, or None.
+
+    The IMS and emergency bearers are the modem's own; they never carry
+    internet traffic or MMS.
+    """
+    code, out = run("mmcli", "-m", "any", "-K")
+    if code:
+        return None
+    for key, path in keyvalues(out).items():
+        if not key.startswith("modem.generic.bearers.value["):
+            continue
+        code, out = run("mmcli", "-b", path, "-K")
+        if code:
+            continue
+        bearer = keyvalues(out)
+        apn = bearer.get("bearer.properties.apn", "--")
+        if bearer.get("bearer.status.connected") == "yes" and apn.lower() not in ("--", "ims", "sos"):
+            return apn
+    return None
+
+
+def database_entries(operator):
+    """Return (apn, shared, mmsc, proxy) for each MMS entry of the network.
+
+    shared is True when the same provider lists the APN for internet too.
+    """
+    entries = []
+    try:
+        root = ET.parse(DATABASE).getroot()
+    except (OSError, ET.ParseError) as err:
+        log("cannot read %s: %s" % (DATABASE, err))
+        return entries
+    for gsm in root.iter("gsm"):
+        if not any(n.get("mcc", "") + n.get("mnc", "") == operator for n in gsm.findall("network-id")):
+            continue
+        internet = {
+            apn.get("value")
+            for apn in gsm.findall("apn")
+            if any(u.get("type") == "internet" for u in apn.findall("usage"))
+        }
+        for apn in gsm.findall("apn"):
+            if not any(u.get("type") == "mms" for u in apn.findall("usage")):
+                continue
+            mmsc = (apn.findtext("mmsc") or "").strip()
+            if not mmsc:
+                continue
+            proxy = (apn.findtext("mmsproxy") or "").strip()
+            entries.append((apn.get("value"), apn.get("value") in internet, mmsc, proxy))
+    return entries
+
+
+def wanted_settings(operator, bearer_apn):
+    """Choose the MMSC, proxy and APN, or return None when the database has no MMS entry."""
+    entries = database_entries(operator)
+    if not entries:
+        return None
+    # An entry for the APN in use wins; it tells MVNOs on one network apart.
+    entry = next((e for e in entries if e[0] == bearer_apn), entries[0])
+    apn, shared, mmsc, proxy = entry
+    if shared and bearer_apn:
+        apn = bearer_apn
+    return {"CarrierMMSC": mmsc, "CarrierMMSProxy": proxy or "NULL", "MMS_APN": apn}
+
+
+def mmsd_settings():
+    """Return mmsd-tng's current settings, or None when it is not running."""
+    code, out = run("gdbus", "call", *MMSD, "--method", "org.ofono.mms.ModemManager.ViewSettings")
+    if code:
+        return None
+    return dict(re.findall(r"'(\w+)': <'([^']*)'>", out))
+
+
+def apply():
+    operator = sim_operator()
+    if not operator:
+        return
+    current = mmsd_settings()
+    if current is None:
+        return
+    wanted = wanted_settings(operator, data_apn())
+    if not wanted:
+        log("no MMS settings for %s in %s; enter them in Chatty" % (operator, DATABASE))
+        return
+    for setting, value in wanted.items():
+        if current.get(setting) == value:
+            continue
+        code, _ = run(
+            "gdbus", "call", *MMSD, "--method", "org.ofono.mms.ModemManager.ChangeSettings",
+            setting, "<'%s'>" % value,
+        )
+        log("%s=%s%s" % (setting, value, "" if not code else " (failed)"))
+
+
+def wait_for_mmsd():
+    while mmsd_settings() is None:
+        time.sleep(2)
+
+
+def watch():
+    """Run apply() after every change of the SIM or of the bearers."""
+    monitor = subprocess.Popen(
+        ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.ModemManager1"],
+        stdout=subprocess.PIPE, text=True,
+    )
+    changed = threading.Event()
+
+    def read():
+        for line in monitor.stdout:
+            if any(event in line for event in EVENTS):
+                changed.set()
+        changed.set()
+
+    threading.Thread(target=read, daemon=True).start()
+    while True:
+        changed.wait()
+        # Settle: ModemManager sends many signals while a bearer comes up.
+        changed.clear()
+        while changed.wait(DEBOUNCE):
+            changed.clear()
+        if monitor.poll() is not None:
+            return
+        apply()
+
+
+def main():
+    wait_for_mmsd()
+    while True:
+        apply()
+        watch()
+        time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()

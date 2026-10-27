@@ -11,11 +11,12 @@ can copy them into a checkout. Build and test them as described in
 | Package | What it does | Docs |
 |---|---|---|
 | `device-google-bramble` | Device package: deviceinfo, udev rules, ALSA UCM, OpenRC services (modem, WLAN firmware data, carrier configuration, firmware, GNSS, UI boost), phoc scale, the DRM format shim. `-pipewire` has the WirePlumber config and the speaker limiter. | [display-gpu](../docs/hardware/display-gpu.md), [audio](../docs/hardware/audio.md), [modem](../docs/hardware/modem.md), [wifi](../docs/hardware/wifi.md) |
-| `linux-google-bramble` | The 4.19 downstream kernel: config and patches `0001`-`0026`. | [boot](../docs/hardware/boot.md), [input-usb](../docs/hardware/input-usb.md), [kernel-fixes](../docs/hardware/kernel-fixes.md), [modem](../docs/hardware/modem.md) |
+| `linux-google-bramble` | The 4.19 downstream kernel: config and patches `0001`-`0027`. | [boot](../docs/hardware/boot.md), [input-usb](../docs/hardware/input-usb.md), [kernel-fixes](../docs/hardware/kernel-fixes.md), [modem](../docs/hardware/modem.md) |
 | `bramble-android-hal` | The Android HAL container (camera and fingerprint HALs, and `bramble-acdb`, which loads the voice call calibration) and the PipeWire camera bridge. | [android-hal](../docs/hardware/android-hal.md), [camera](../docs/hardware/camera.md), [modem](../docs/hardware/modem.md) |
 | `bramble-fingerprint` | Fingerprint enrol, verify, list, remove, and the service that unlocks the lock screen. | [fingerprint](../docs/hardware/fingerprint.md) |
 | `bramble-sensors` | Sensor DSP service, udev tags for iio-sensor-proxy, `bramble-sensors-demo`. | [sensors](../docs/hardware/sensors.md) |
 | `bramble-voice` | `bramble-voiced`: sets up the audio DSP voice path while ModemManager has a call. | [modem](../docs/hardware/modem.md) |
+| `bramble-mms` | `bramble-mms-settings`: gives `mmsd-tng` the MMSC, proxy and APN of the inserted SIM. | [modem](../docs/hardware/modem.md) |
 
 ## Main (`main/`)
 
