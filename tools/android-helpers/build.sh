@@ -18,6 +18,7 @@ flags="-O2 -Wall -Wextra -std=c++17 -static-libstdc++"
 $cxx $flags -o "$out/bramble-camera-ndk" "$here/bramble-camera-ndk.cpp" \
 	-lcamera2ndk -lmediandk -landroid -llog -ldl
 $cxx $flags -o "$out/bramble-camera-proxy" "$here/bramble-camera-proxy.cpp" -lbinder_ndk -ldl
-$strip "$out/bramble-camera-ndk" "$out/bramble-camera-proxy"
-chmod 644 "$out/bramble-camera-ndk" "$out/bramble-camera-proxy"
+$cxx $flags -o "$out/bramble-acdb" "$here/bramble-acdb.cpp" -ldl
+$strip "$out/bramble-camera-ndk" "$out/bramble-camera-proxy" "$out/bramble-acdb"
+chmod 644 "$out/bramble-camera-ndk" "$out/bramble-camera-proxy" "$out/bramble-acdb"
 echo "[android-helpers] built into $out; run pmbootstrap checksum bramble-android-hal"

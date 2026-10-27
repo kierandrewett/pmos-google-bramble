@@ -72,6 +72,10 @@ assemble_root() {
 
 	# Helpers that run inside the container.
 	install -m755 $SHARE/bin/bramble-camera-ndk $SHARE/bin/bramble-camera-proxy $ROOT/system/bin/
+	# bramble-acdb loads vendor libraries, which a program in /system/bin
+	# may not do: from /data/local/tmp the linker does not restrict it.
+	mkdir -p $STATE/data/local/tmp
+	install -m755 $SHARE/bin/bramble-acdb $STATE/data/local/tmp/bramble-acdb
 
 	# vold is off here; its client vdc would wait for it forever. Halium's
 	# post-data hook waits for a boot HAL (the host runs qbootctl instead).
@@ -128,6 +132,8 @@ setup_namespace() {
 	mknod_like /dev/kmsg 0620 0 0
 	mknod_like /dev/ashmem 0666 0 0
 	mknod_like /dev/ion 0664 1000 1000
+	# Audio calibration for the DSP (bramble-acdb).
+	mknod_like /dev/msm_audio_cal 0660 1000 1005
 	mknod_like /dev/kgsl-3d0 0666 1000 1000
 	mknod_like /dev/loop-control 0660 0 6
 	# Camera: CAMX nodes, and the rear spectral (flicker) sensor read by

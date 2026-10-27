@@ -4,13 +4,13 @@ maintainer="Kieran Drewett <kieran@drewett.dev>"
 # the cameras to camera apps (GNOME Snapshot) as PipeWire camera nodes;
 # bramble-camera takes full-resolution photos from the command line.
 #
-# bramble-camera-ndk and bramble-camera-proxy run inside the container
+# bramble-camera-ndk, bramble-camera-proxy and bramble-acdb run inside the container
 # (bionic, Android 14). pmbootstrap has no Android NDK, so they are built
 # from tools/android-helpers/ in the pmos-google-bramble repository with
 # tools/android-helpers/build.sh and shipped prebuilt here.
 pkgname=bramble-android-hal
 pkgver=1
-pkgrel=13
+pkgrel=14
 pkgdesc="Google Pixel 4a (5G): Android vendor HAL container and camera tool"
 url="https://github.com/kierandrewett/pmos-google-bramble"
 arch="aarch64"
@@ -38,6 +38,7 @@ source="
 	bramble-android.sh
 	bramble-camera-ndk
 	bramble-camera-proxy
+	bramble-acdb
 	bramble-camera.sh
 	bramble.rc
 	init.bramble.rc
@@ -66,7 +67,8 @@ package() {
 		"$srcdir"/vendor-init.list
 	install -Dm755 -t "$share"/bin \
 		"$srcdir"/bramble-camera-ndk \
-		"$srcdir"/bramble-camera-proxy
+		"$srcdir"/bramble-camera-proxy \
+		"$srcdir"/bramble-acdb
 
 	install -dm700 "$pkgdir"/var/lib/bramble-android
 }
@@ -80,9 +82,10 @@ sha512sums="
 4f0019c8e36fbb257dc49bee8250ce7b45c87b0cc355beec70384c3658395364b3227e60e972e92e1380013cf11f21aecb3ed1f8935634851800ad6d943bd695  bramble-android.initd
 728a36418045b9b988d4fb700e24355b586aee6a27f2ca12b834e0863a7db23572163713a593ba53254e4ecabac55af5b8de53bfbacb68fda870adb2c5fadc8e  bramble-camera-pipewire.c
 b8d84b4363210b2a83c419534a203ab2f376c47ced2f825c6e8561116a244ca43a987774243dcad752b32e80f400cc629df5910ba451ef405f8cf5d05e454b23  bramble-camera-pipewire.desktop
-dce25462cf922561d66b12f3959d72a54d8f62314a7e7eb0a5deea7ab2838a2dee0e2335d5cefedda6a0dc46808b243b45d8efd4fd31d48e02fa2b5a3cadcc66  bramble-android.sh
+5fc8ddfb9176152685ea390ea4ed2bf5288d59b81d85a98cdd70f3584a01e0f9e82b8dd807d27dfbbf9ecd1c1d25c10ee18deea9aa158b0494a7fd5c9ab947c6  bramble-android.sh
 c6caba5a8825bcf3a2bb261b1df864e11dcbee8d7d10201a3b30eb088f20fb7ced0f8d11a5579d87b7fdd90ebdd09a2929be967815b2d67cf26e2a424bdb78a8  bramble-camera-ndk
 33991cb712f48f91c72865f13107a92242b6d54d71eef997c03ae655165e89dac2d91853fcaa24eb1564fc014a4b6cd1dea4893e08312c440dcb9f244edd9bf6  bramble-camera-proxy
+df3cd59636060d67e66cc80f24598db1bcf7c132348be92d2dbda5d5d3d0738169a8ea8132d2cf5b70f869c160e8361afcb73ac0f02d0cf67035ed0bcac27a61  bramble-acdb
 b5579fcae3d3a6094d8a02c7bed22f7abc7cf37665ca6ebb2bac53fcf83cce5ad191c2e887db5af5cbca93954b94778a2c85042687d13b9f04ccd7d067b6d8b0  bramble-camera.sh
 72ea56688a00e1d9a00c17b87dedb0b80ad91aa056db450fedc77f257f230a18373e6087962fb52ff3256bcf298d2e71ac002e08ae7bdac4f553f927f0b2e1fe  bramble.rc
 84eeefa629fc686bad18b3315e3e243935533abbf20d9d9cbded50e56a46499bf8fe0ccaf72f196cdb4397c24bba75cef23bd57bde8b631df340b2f6de8c5e4e  init.bramble.rc
