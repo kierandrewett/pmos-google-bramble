@@ -69,19 +69,21 @@ moves Phosh to a new release, rebase `temp/phoc` (the two must match).
 
 ## Test on a running phone
 
-Install a rebuilt package over USB networking:
+Install a rebuilt package over USB networking. The phone has no `scp`
+binary and no SFTP server, so `scp` and `pmbootstrap sideload` fail. Copy
+the package through ssh instead. `pmbootstrap build` puts it in
+`packages/edge/aarch64` in your pmbootstrap work directory
+(`pmbootstrap config work`):
 
 ```sh
-pmbootstrap sideload device-google-bramble
+apk=device-google-bramble-2-r38.apk   # use the version you built
+ssh user@172.16.42.1 "cat > /tmp/$apk" < "$(pmbootstrap config work)/packages/edge/aarch64/$apk"
+ssh -t user@172.16.42.1 "sudo apk add --allow-untrusted /tmp/$apk"
 ```
 
-Or copy and install it by hand. The phone has no SFTP server, so use
-`scp -O` (legacy SCP protocol), or `adb push`:
-
-```sh
-scp -O ~/.local/var/pmbootstrap/packages/edge/aarch64/device-google-bramble-*.apk user@172.16.42.1:/tmp/
-ssh user@172.16.42.1 'sudo apk add --allow-untrusted /tmp/device-google-bramble-*.apk'
-```
+Subpackages that are already installed (for example
+`device-google-bramble-pipewire`) need the same version: copy and install
+them in the same `apk add` command.
 
 ### adb and screen mirroring
 

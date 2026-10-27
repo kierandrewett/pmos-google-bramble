@@ -106,6 +106,5 @@ tap.
 ## Updating
 
 These packages are not in the postmarketOS binary repository. Rebuild them
-with pmbootstrap and install them with `pmbootstrap sideload <package>`. A
-new kernel also has to be flashed again. See
-[development.md](development.md).
+with pmbootstrap and copy them to the phone, as [development.md](development.md)
+explains. A new kernel also has to be flashed again.
