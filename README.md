@@ -38,7 +38,7 @@ says how each item was checked and lists the known problems.
 | Wi-Fi | Works | |
 | Bluetooth | Works | Pairing, audio. Each phone gets its own address. |
 | Mobile data (LTE) | Works | |
-| SMS, voice calls | Partial | Outgoing SMS and calls over VoLTE work on a Three UK SIM. Incoming, MMS and the speaker button are not tested. |
+| SMS, voice calls | Partial | SMS and calls over VoLTE work on a Three UK SIM. MMS and the speaker button are not tested. |
 | RCS | Not supported | Needs Google Play services. |
 | GPS | Works | Switch Location on in Settings. |
 | Audio: speakers, microphone, headphones | Works | Use PipeWire. PulseAudio does not switch to headphones. |

@@ -103,7 +103,8 @@ tap.
 - Mobile data: with a roaming SIM it can take about 2.5 minutes to come up
   after boot.
 - Calls and SMS: they use VoLTE. Calls from the Calls app and SMS from
-  `mmcli` were tested; incoming calls, incoming SMS and Chatty were not.
+  `mmcli` were tested, and the owner confirmed by hand that calls and SMS
+  work. Chatty was not tested on its own.
   The SIM needs VoLTE on its plan, and the network must support it. Three UK
   has no 2G or 3G fallback, so VoLTE is the only way there. The first time a
   SIM is in the phone, `bramble-mcfg` selects the modem's carrier
