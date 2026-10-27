@@ -30,3 +30,32 @@ sent. 0027 moves the capability check in `sock_bindtoindex_locked()` to the
 case of an existing binding, as mainline does. Check as an ordinary user: the
 first `setsockopt(SO_BINDTODEVICE)` on a new socket works, and a second one
 with another interface name fails with `EPERM`.
+
+## Console switch on suspend
+
+Before it suspends, the kernel switches to a suspend console (tty63) and
+switches back after the resume, unless every framebuffer sets
+`fb_info->skip_vt_switch`. The msm framebuffer did not. With a Phosh session
+this ended the session at every resume:
+
+1. elogind pauses the DRM device on the switch away and resumes it on the
+   switch back.
+2. wlroots destroys every output when the seat is paused and adds `DSI-1`
+   again on the resume, so phoc has a new output.
+3. Phosh builds its whole UI again for the new output. phoc waits 3 s for
+   the layer surfaces to answer ("Timeout (3000ms) expired with 2 configures
+   pending"), and Phosh takes longer on this phone.
+4. The late answer hits the assertion in
+   `phoc_layout_transaction_notify_layer_configured`, phoc closes the
+   connection ("error in client communication"), Phosh prints "Lost
+   connection to Wayland compositor" and exits with code 1, gnome-session
+   ends the session ("Unrecoverable failure in required component
+   mobi.phosh.Shell.desktop"), and greetd starts a new greeter.
+
+0028 sets `skip_vt_switch` for the msm framebuffer. The display driver does
+not need the console switch: `sde_kms_pm_suspend()` keeps a copy of the
+display state and `sde_kms_pm_resume()` commits it again. Android has no VT.
+Check: lock the screen and run `rtcwake -m mem -s 60` as root. The Phosh PID
+(`pgrep -f '^/usr/libexec/phosh$'`) and the session in `loginctl
+list-sessions` stay the same, and `dmesg` shows no `dsi_backlight_early_dpms:
+power_mode:0` after the resume, so the screen stays off.

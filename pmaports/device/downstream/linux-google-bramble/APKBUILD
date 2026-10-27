@@ -4,7 +4,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=linux-google-bramble
 pkgver=4.19.325
-pkgrel=37
+pkgrel=38
 _commit="2af5306961aebce4cc30098c9f12a09f8d906906"
 pkgdesc="Google Pixel 4a (5G) downstream kernel (LineageOS 23.2)"
 arch="aarch64"
@@ -62,6 +62,7 @@ source="
 	0025-input-fts_touch-wake-only-once-per-screen-off.patch
 	0026-net-qrtr-accept-new-server-messages-with-zero-node-and-port.patch
 	0027-net-allow-SO_BINDTODEVICE-for-sockets-that-are-not-bound-yet.patch
+	0028-drm-msm-do-not-switch-to-the-suspend-console-on-suspend.patch
 "
 builddir="$srcdir/android_kernel_google_redbull-$_commit"
 _outdir="out"
@@ -142,4 +143,5 @@ c8a725eb9089b41d11ab0bc9a4f5481d11fe9bda18b20a7d212b8c02dac0806ffceeb013b4c96c56
 4d021f133f00cad71100aafeed040fe304e7720aff4a8912e25d9f1d6376b915dca876a6f4ffb79dd4988c18c0922c532584b63e4668689e3a1bdb7771de831c  0025-input-fts_touch-wake-only-once-per-screen-off.patch
 6fdba3aac435a0ee69504217a12659300d579a27da2b877391a373c418d8ce389f88dcf57b6d588223f3127119b9552a14723c28a677510d8fa7b520e8aab1db  0026-net-qrtr-accept-new-server-messages-with-zero-node-and-port.patch
 94e2d6752b08bcc2199786160fd31be9df74f366ca733136f884decfadfda24ff97985395a4d09adc9e5b5fbf70f028c51d381b4f074748399c6c7f4461737dd  0027-net-allow-SO_BINDTODEVICE-for-sockets-that-are-not-bound-yet.patch
+3438780beac9ba8c5500e8a6170730b44ccbc0f8073860c79744972717218d4455efcfda1a1465bedcd4fe03b32b0dc1824247a349e9311f56e6ab0c0428bb7e  0028-drm-msm-do-not-switch-to-the-suspend-console-on-suspend.patch
 "

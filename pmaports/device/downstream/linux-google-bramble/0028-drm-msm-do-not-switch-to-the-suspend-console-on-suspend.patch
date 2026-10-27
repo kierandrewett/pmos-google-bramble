@@ -1,0 +1,38 @@
+From: postmarketOS <bramble@localhost>
+Subject: [PATCH] drm/msm: do not switch to the suspend console on suspend
+
+The kernel switches to a suspend console (tty63) before it suspends, and
+back to the old console after resume, unless every framebuffer says that
+it does not need this (fb_info->skip_vt_switch). The msm framebuffer did
+not say so. With a Wayland session this switch is a problem: elogind
+pauses the DRM device and resumes it again, wlroots destroys the output on
+the pause and adds a new one on the resume, and Phosh builds its whole UI
+again for the new output. On the Pixel 4a (5G) this takes more than the
+3 s that phoc waits for the layer surfaces to answer. phoc then removes
+Phosh from the compositor (a late answer hits its assertion in
+phoc_layout_transaction_notify_layer_configured), Phosh exits with code 1,
+gnome-session ends the session, and the user is logged out at every
+resume. The new output also switches the screen on after the resume.
+
+Android has no VT. The display driver does not need the console switch:
+sde_kms_pm_suspend() keeps a copy of the display state and
+sde_kms_pm_resume() commits it again.
+
+---
+--- a/techpack/display/msm/msm_fbdev.c
++++ b/techpack/display/msm/msm_fbdev.c
+@@ -132,6 +132,14 @@
+ 
+ 	strlcpy(fbi->fix.id, "msm", sizeof(fbi->fix.id));
+ 
++	/*
++	 * Do not let suspend switch to the suspend console and back. The switch
++	 * makes elogind pause and resume the DRM device, wlroots destroys and
++	 * re-adds the output, and Phosh builds its whole UI again while phoc
++	 * waits for it. phoc drops Phosh after 3 s. Android has no VT either.
++	 */
++	fbi->skip_vt_switch = true;
++
+ 	drm_fb_helper_fill_fix(fbi, fb->pitches[0], fb->format->depth);
+ 	drm_fb_helper_fill_var(fbi, helper, sizes->fb_width, sizes->fb_height);
+ 
