@@ -5,6 +5,9 @@
 #   qcacld-3.0 driver; a copy with WLAN IPA offload off, see below
 # - the sub-directories of the modem image (modem_pr, saipan), which the
 #   modem asks tqftpserv for as /readonly/firmware/image/<dir>/...
+# - the carrier configs of the modem (MCFG, the .mbn files) from the vendor
+#   partition, which the modem asks tqftpserv for as /readonly/vendor/mbn/...
+#   (tqftpserv looks them up as mbn/... in the firmware path)
 
 name="bramble-firmware"
 description="Link extra Pixel 4a (5G) firmware directories"
@@ -42,6 +45,10 @@ start() {
 			[ -f "$_f" ] || continue
 			ln -s "$_f" "$_base/target/qca/${_f##*/}"
 		done
+	fi
+	_mbn="$_base/mnt/vendor$_slot/rfs/msm/mpss/readonly/vendor/mbn"
+	if [ -d "$_mbn" ] && [ ! -e "$_base/target/mbn" ]; then
+		ln -s "$_mbn" "$_base/target/mbn"
 	fi
 	eend 0
 }

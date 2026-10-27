@@ -3,12 +3,13 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=33
+pkgrel=34
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
 license="MIT"
 depends="
+	81voltd
 	adbd
 	android-tools
 	bootmac
@@ -162,7 +163,7 @@ cbad80a849cd084791ac3e8e4240a76f5a12d5c76b41847141dd67cb735d4a33c2afee89017c0fcb
 24e5809cf3916df1cf0d5a2a25e34cea678bdf7dce040fbe70de095d37c33113e3a8131771e3711af5c68831461ca2804f95e917bb12b04d316156aaff186ce6  NetworkManager-conf.d-bramble-wowlan.conf
 cab3058a42a776fc821dfd0782344fa257a0d6801afdb0dc1572edbfce203a3a8597609a80c5a8634165a2233ac11d7f8978ef0ee83b094cbddc22e7f347592b  sm7250-bolero-snd-card.conf
 5d0b466b079326ac441ba32abb236bf56ec56c535b89ec82c801f54240d1720b39fb31fff2b44727f0ea8cc24f8d92856e73d20c07b8927a2f47b2c84c6e8560  HiFi.conf
-2d2b9ddaa2dc54ce97460a980f55927136dc4767b9d58512a8a932879a31670780f4c2b47efb353810756bb75509c599b7d5ea97842fea243b5068dea8d753ae  bramble-firmware.initd
+9ad11014f6c829fc02fdf9032329131a3af6a36bde5355b1c6fa8c2dce994f5ae40b43739aae0756ea552a52786d6967fc6efc4d71e25a9b611ea8f79a85dc06  bramble-firmware.initd
 4a2bdacb6026d92c0d9a2821adc144badfdf810bec5ba0c695b1908687c3a81ff834a304eeee803eaf04d7be905149cb578bce2f470616602de0bad6d7a29f3a  phoc.ini
 72792eddbb0b8317dce3147fccfb469525f241a4610f74970d71c04c2421c91d70e1d325f1e235671be3f7ed5e93796c6a258fa5415baf1f7a52e5e8c949c2a1  10-bramble-env.conf
 470c4dae7b47d79bf78c85a8a1e1e23e7c428ca72018c956f416f861892ec9c3178b55f3911da500fab098310154c6083316ab56deeedf5b22cfd347965d053d  bramble-environment.conf

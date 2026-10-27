@@ -15,5 +15,8 @@ rc-update -q add bramble-gnss default
 if [ "$(apk version -t "$2" 2-r29)" = "<" ]; then
 	rc-update -q add bramble-ui-boost default
 fi
+if [ "$(apk version -t "$2" 2-r34)" = "<" ]; then
+	rc-update -q add 81voltd default
+fi
 
 exit 0
