@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# Voice call audio (calibration, routing, voice PCM). See bramble-voiced.
+supervisor=supervise-daemon
+name="bramble-voiced"
+description="Voice call audio for the Pixel 4a (5G)"
+
+command=/usr/libexec/bramble-voiced
+output_logger="logger -t bramble-voiced"
+error_logger="logger -t bramble-voiced"
+
+depend() {
+	need modemmanager bramble-android
+	after bramble-modem
+}

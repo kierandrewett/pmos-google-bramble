@@ -1,0 +1,4 @@
+# Voice call volume step of the DSP (0 is the quietest). RX_STEP is used on
+# the earpiece and headphones, RX_STEP_SPEAKER on the speaker.
+RX_STEP="4"
+RX_STEP_SPEAKER="4"

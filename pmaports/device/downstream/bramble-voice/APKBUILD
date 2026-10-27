@@ -1,0 +1,48 @@
+# Voice call audio on the Pixel 4a (5G). ModemManager connects the call; this
+# daemon starts the audio DSP's voice path while a call is active: voice
+# calibration (through bramble-acdb in the Android HAL container), routing,
+# microphone and the voice PCM.
+maintainer="Kieran Drewett <kieran@drewett.dev>"
+pkgname=bramble-voice
+pkgver=1
+pkgrel=1
+pkgdesc="Google Pixel 4a (5G): voice call audio"
+url="https://github.com/kierandrewett/pmos-google-bramble"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	alsa-lib
+	alsa-utils
+	bramble-android-hal
+	glib
+	modemmanager
+	pulseaudio-utils
+	python3
+	wireplumber
+	"
+install="$pkgname-openrc.post-install"
+subpackages="$pkgname-openrc"
+source="
+	bramble-voiced
+	bramble-voiced.initd
+	bramble-voiced.confd
+	"
+install_if="device-google-bramble"
+options="!check" # Needs a phone with a call
+
+package() {
+	install -Dm755 "$srcdir"/bramble-voiced "$pkgdir"/usr/libexec/bramble-voiced
+	install -Dm644 "$srcdir"/bramble-voiced.confd "$pkgdir"/etc/conf.d/bramble-voiced
+}
+
+openrc() {
+	pkgdesc="Google Pixel 4a (5G): voice call audio OpenRC service"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+
+	install -Dm755 "$srcdir"/bramble-voiced.initd "$subpkgdir"/etc/init.d/bramble-voiced
+}
+sha512sums="
+83380be04f29b3e95ac299da57ea5ff4d0cbcb30189323d25b92233a1281135e11a26fe7872da142950049f998ab71383e19654bc9ee22ef2de928f8ec975729  bramble-voiced
+d303e1b52c6f6475c204c511a582481f4f02715ea3fce9b5becfb55897a3180aefc7ca7c9c7bdf06a5fee492d44d0d8ad4d12572881cb6ea81a6acf3f1ed5cd2  bramble-voiced.initd
+a57afe39ef235a7f0223fdb363e44564d6127d7d3831791797c91ab9e60a8acc7a13b66c802abddedf95f4f0ed1b31c3b95f288f60276e8ec9c37fffde0bb17a  bramble-voiced.confd
+"

@@ -1,0 +1,454 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Voice call audio for the Pixel 4a (5G).
+
+ModemManager connects the call (VoLTE), but the voice audio runs in the
+audio DSP. Android's audio HAL starts it in four steps, and this daemon
+does the same while a call is active:
+
+1. send the voice calibration (ACDB) to the DSP, through bramble-acdb in the
+   Android HAL container. Without it the DSP voice path has no processing
+   chain and the far end hears nothing;
+2. route the voice session to the amplifier or the headset (mixer controls);
+3. enable HD voice and unmute;
+4. open the voice PCM (hw:0,2) for playback and capture and start it. The
+   PCM has no data buffer: reading or writing it crashes the kernel, so
+   nothing may use it for I/O, and PipeWire cannot be given this device.
+
+The output device (earpiece, speaker, headphones) is whatever the UCM
+device selection left on: callaudiod switches it when the user taps the
+speaker button in Calls, and this daemon follows.
+"""
+import ctypes
+import glob
+import os
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+CARD = "0"
+PCM = "hw:0,2"
+ALL_SESSIONS = 4294967295
+VSID_MMODE1 = 0x11C05000
+MM_CALL_ACTIVE = (4, 5)
+CONF = "/etc/conf.d/bramble-voiced"
+
+# From /data/local/tmp: the unrestricted linker namespace there is the only place a
+# binary can load the vendor library libacdbloader.so.
+ACDB = ["/usr/libexec/bramble-android", "exec", "/data/local/tmp/bramble-acdb", "serve"]
+
+# ACDB ids from /vendor/etc/audio_platform_info_bolero_snd.xml.
+ROUTES = {
+    "earpiece": {
+        "acdb": (7, 4),
+        "mixers": [
+            ("QUIN_TDM_RX_0_Voice Mixer VoiceMMode1", "1"),
+            ("VoiceMMode1_Tx Mixer PRI_TDM_TX_0_MMode1", "1"),
+        ],
+    },
+    "speaker": {
+        "acdb": (14, 19),
+        "mixers": [
+            ("QUIN_TDM_RX_0_Voice Mixer VoiceMMode1", "1"),
+            ("VoiceMMode1_Tx Mixer PRI_TDM_TX_0_MMode1", "1"),
+        ],
+    },
+    "headphones": {
+        "acdb": (45, 4),
+        "mixers": [
+            ("RX_CDC_DMA_RX_0_Voice Mixer VoiceMMode1", "1"),
+            ("VoiceMMode1_Tx Mixer PRI_TDM_TX_0_MMode1", "1"),
+        ],
+    },
+    "headset": {
+        "acdb": (45, 44),
+        "mixers": [
+            ("RX_CDC_DMA_RX_0_Voice Mixer VoiceMMode1", "1"),
+            ("VoiceMMode1_Tx Mixer TX_CDC_DMA_TX_3_MMode1", "1"),
+        ],
+    },
+}
+ROUTE_OFF = {
+    "VOC_EXT_EC MUX": "NONE",
+}
+
+# Amplifier switches for the voice output, from the stock mixer paths
+# "voice-handset" (earpiece: the left amplifier) and "voice-speaker"
+# (speaker-mono: the right one).
+AMPS = {
+    "earpiece": [("Main AMP Enable Switch", "1"), ("R Main AMP Enable Switch", "0"), ("CALL EN", "1")],
+    "speaker": [("Main AMP Enable Switch", "0"), ("R Main AMP Enable Switch", "1"), ("CALL EN", "0")],
+}
+
+# The internal microphones (stock path "dmic-endfire", with the channel count
+# the HiFi verb needs). PipeWire only switches these on while something
+# records, so a call has to do it.
+MIC_MIXERS = [
+    ("ADC1 Capture Volume", "55"),
+    ("ADC2 Capture Volume", "55"),
+    ("PRI_TDM_TX_0 Channels", "Two"),
+    ("Stereo1 DMIC Mux", "DMIC1"),
+    ("Sto1 ADC MIXL DMIC Switch", "1"),
+    ("Sto1 ADC MIXR DMIC Switch", "1"),
+    ("Sto2 ADC MIXL DMIC Switch", "1"),
+]
+
+alsa = ctypes.CDLL("libasound.so.2")
+
+
+def run(cmd, **kw):
+    """subprocess.run that treats a missing program like a failed one."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    except OSError as e:
+        log("%s: %s" % (cmd[0], e))
+        return subprocess.CompletedProcess(cmd, 127, "", str(e))
+
+
+def log(msg):
+    print("[bramble-voiced] " + msg, file=sys.stderr, flush=True)
+
+
+def conf():
+    """Read NAME="value" lines from /etc/conf.d/bramble-voiced."""
+    out = {}
+    try:
+        for line in open(CONF):
+            m = re.match(r'^\s*([A-Z_]+)="?([^"#\n]*)"?', line)
+            if m:
+                out[m.group(1)] = m.group(2).strip()
+    except OSError:
+        pass
+    return out
+
+
+def amixer(*args):
+    r = run(["amixer", "-c" + CARD, "-q", *args])
+    if r.returncode != 0:
+        log("amixer %s: %s" % (" ".join(args), r.stderr.strip()))
+    return r.returncode == 0
+
+
+def cset(name, value):
+    return amixer("cset", "name=" + name, value)
+
+
+def session_bus(uid):
+    """The session bus address of the user's Phosh (it runs under dbus-run-session)."""
+    r = run(["pgrep", "-u", str(uid), "-x", "phosh"])
+    for pid in r.stdout.split():
+        try:
+            for item in open("/proc/%s/environ" % pid, "rb").read().split(b"\0"):
+                if item.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
+                    return item.split(b"=", 1)[1].decode()
+        except OSError:
+            pass
+    return None
+
+
+def user_run(cmd):
+    """Run a command as the user who owns the PipeWire session (root cannot use it)."""
+    for sock in glob.glob("/run/user/*/pipewire-0"):
+        st = os.stat(sock)
+        env = {**os.environ, "XDG_RUNTIME_DIR": os.path.dirname(sock)}
+        bus = session_bus(st.st_uid)
+        if bus:
+            env["DBUS_SESSION_BUS_ADDRESS"] = bus
+        return run(cmd, env=env, user=st.st_uid, group=st.st_gid, extra_groups=[])
+    return None
+
+
+def speaker_selected():
+    """True if the user chose the speaker in Calls (callaudiod's SpeakerState)."""
+    r = user_run(["busctl", "--user", "get-property", "org.mobian_project.CallAudio",
+                  "/org/mobian_project/CallAudio", "org.mobian_project.CallAudio", "SpeakerState"])
+    return bool(r) and r.stdout.strip() == "b true"
+
+
+def ctl_write(name, values):
+    """Write integers to a mixer control without amixer's range clamping.
+
+    The voice controls declare max=-1, so amixer turns every value into -1.
+    The DSP session id is one of the values."""
+    ctl = ctypes.c_void_p()
+    if alsa.snd_ctl_open(ctypes.byref(ctl), ("hw:" + CARD).encode(), 0) < 0:
+        log("cannot open the sound card controls")
+        return False
+    ident = ctypes.c_void_p()
+    value = ctypes.c_void_p()
+    alsa.snd_ctl_elem_id_malloc(ctypes.byref(ident))
+    alsa.snd_ctl_elem_value_malloc(ctypes.byref(value))
+    alsa.snd_ctl_elem_id_set_interface(ident, 2)
+    alsa.snd_ctl_elem_id_set_name(ident, name.encode())
+    alsa.snd_ctl_elem_value_set_id(value, ident)
+    alsa.snd_ctl_elem_value_set_integer.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_long]
+    for i, v in enumerate(values):
+        alsa.snd_ctl_elem_value_set_integer(value, i, v)
+    ret = alsa.snd_ctl_elem_write(ctl, value)
+    alsa.snd_ctl_elem_value_free(value)
+    alsa.snd_ctl_elem_id_free(ident)
+    alsa.snd_ctl_close(ctl)
+    if ret < 0:
+        log("write %s %s failed: %d" % (name, values, ret))
+    return ret >= 0
+
+
+def control_on(selector):
+    """True if a boolean mixer control is on (selector is the cget argument)."""
+    r = run(["amixer", "-c" + CARD, "cget", selector])
+    return "values=on" in r.stdout
+
+
+def detect_route():
+    if control_on("iface=CARD,name='Headset Mic Jack'"):
+        return "headset"
+    if control_on("iface=CARD,name='Headphone Jack'"):
+        return "headphones"
+    # The speaker button in Calls goes to callaudiod, which cannot switch the
+    # output on this card (the UCM devices are separate nodes), but keeps the
+    # choice.
+    return "speaker" if speaker_selected() else "earpiece"
+
+
+class VoicePcm:
+    """The voice PCM, opened for playback and capture and started, never read or written."""
+
+    def __init__(self, device, rate=8000):
+        self.handles = []
+        for stream in (0, 1):
+            pcm = ctypes.c_void_p()
+            self._check(alsa.snd_pcm_open(ctypes.byref(pcm), device.encode(), stream, 0), "open")
+            self.handles.append(pcm)
+            params = ctypes.c_void_p()
+            self._check(alsa.snd_pcm_hw_params_malloc(ctypes.byref(params)), "hw_params_malloc")
+            self._check(alsa.snd_pcm_hw_params_any(pcm, params), "hw_params_any")
+            self._check(alsa.snd_pcm_hw_params_set_access(pcm, params, 3), "access")
+            self._check(alsa.snd_pcm_hw_params_set_format(pcm, params, 2), "format")
+            self._check(alsa.snd_pcm_hw_params_set_channels(pcm, params, 1), "channels")
+            r = ctypes.c_uint(rate)
+            self._check(alsa.snd_pcm_hw_params_set_rate_near(pcm, params, ctypes.byref(r), None), "rate")
+            period = ctypes.c_ulong(512)
+            self._check(alsa.snd_pcm_hw_params_set_period_size_near(pcm, params, ctypes.byref(period), None), "period")
+            periods = ctypes.c_uint(2)
+            self._check(alsa.snd_pcm_hw_params_set_periods_near(pcm, params, ctypes.byref(periods), None), "periods")
+            self._check(alsa.snd_pcm_hw_params(pcm, params), "hw_params")
+            alsa.snd_pcm_hw_params_free(params)
+            self._check(alsa.snd_pcm_prepare(pcm), "prepare")
+            self._check(alsa.snd_pcm_start(pcm), "start")
+
+    def _check(self, ret, what):
+        if ret < 0:
+            alsa.snd_strerror.restype = ctypes.c_char_p
+            self.close()
+            raise OSError("%s: %s" % (what, alsa.snd_strerror(ret).decode()))
+
+    def close(self):
+        for pcm in self.handles:
+            alsa.snd_pcm_close(pcm)
+        self.handles = []
+
+
+class Acdb:
+    """bramble-acdb in the Android container: holds the voice calibration."""
+
+    def __init__(self):
+        self.proc = subprocess.Popen(ACDB, stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        self.lines = []
+        self.cond = threading.Condition()
+        threading.Thread(target=self._read, daemon=True).start()
+        self._wait("ready", 15)
+
+    def _read(self):
+        for line in self.proc.stderr:
+            line = line.strip()
+            if not line:
+                continue
+            if "ACDB" in line or "bramble-acdb" in line:
+                with self.cond:
+                    self.lines.append(line)
+                    self.cond.notify_all()
+
+    def _wait(self, text, timeout):
+        end = time.time() + timeout
+        with self.cond:
+            while True:
+                if any(text in line for line in self.lines):
+                    self.lines = [line for line in self.lines if text not in line]
+                    return
+                if self.proc.poll() is not None:
+                    raise OSError("bramble-acdb exited")
+                left = end - time.time()
+                if left <= 0:
+                    raise OSError("bramble-acdb: no '%s'" % text)
+                self.cond.wait(left)
+
+    def voice(self, rx, tx):
+        self.proc.stdin.write("voice %d %d\n" % (rx, tx))
+        self.proc.stdin.flush()
+        self._wait("voice calibration sent", 15)
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+
+
+def mic_muted():
+    r = user_run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+    return bool(r) and "[MUTED]" in r.stdout
+
+
+class Voiced:
+    def __init__(self):
+        self.acdb = None
+        self.pcm = None
+        self.route = None
+        self.muted = None
+
+    def apply_route(self, route):
+        if self.route and self.route != route:
+            for name, _ in ROUTES[self.route]["mixers"]:
+                cset(name, "NONE" if name in ROUTE_OFF else "0")
+        rx, tx = ROUTES[route]["acdb"]
+        self.acdb.voice(rx, tx)
+        for name, value in ROUTES[route]["mixers"]:
+            cset(name, value)
+        for name, value in AMPS.get(route, []):
+            cset(name, value)
+        for name, value in MIC_MIXERS:
+            cset(name, value)
+        self.route = route
+        log("route %s (acdb %d/%d)" % (route, rx, tx))
+
+    def prepare(self):
+        """A call exists: bring up the calibration holder so it is ready at answer."""
+        if self.acdb:
+            return
+        try:
+            self.acdb = Acdb()
+        except OSError as e:
+            log("calibration helper failed: %s" % e)
+            self.acdb = None
+            time.sleep(2)
+
+    def start(self):
+        if self.pcm:
+            return
+        self.prepare()
+        if not self.acdb:
+            return
+        c = conf()
+        route = detect_route()
+        try:
+            self.apply_route(route)
+            ctl_write("HD Voice Enable", [1, VSID_MMODE1])
+            ctl_write("Voice Tx Device Mute", [0, VSID_MMODE1, 20])
+            ctl_write("Voice Rx Device Mute", [0, VSID_MMODE1, 20])
+            ctl_write("Voice Tx Mute", [0, VSID_MMODE1, 500])
+            step = int(c.get("RX_STEP_SPEAKER" if route == "speaker" else "RX_STEP", "4"))
+            ctl_write("Voice Rx Gain", [step, VSID_MMODE1, 20])
+            self.pcm = VoicePcm(PCM)
+        except OSError as e:
+            log("voice session failed: %s" % e)
+            self.stop()
+            return
+        self.muted = False
+        log("voice session started")
+
+    def follow(self):
+        """While a call is active: track the output device and the microphone mute."""
+        route = detect_route()
+        if route != self.route:
+            try:
+                self.apply_route(route)
+            except OSError as e:
+                log("route change failed: %s" % e)
+        muted = mic_muted()
+        if muted != self.muted:
+            ctl_write("Voice Tx Mute", [1 if muted else 0, VSID_MMODE1, 100])
+            self.muted = muted
+            log("microphone %s" % ("muted" if muted else "unmuted"))
+
+    def stop(self):
+        if self.pcm:
+            self.pcm.close()
+            self.pcm = None
+            log("voice session stopped")
+        if self.route:
+            for name, _ in ROUTES[self.route]["mixers"]:
+                cset(name, "NONE" if name in ROUTE_OFF else "0")
+            self.route = None
+        if self.acdb:
+            self.acdb.close()
+            self.acdb = None
+
+
+def call_states():
+    """MM state numbers of all calls: 1 dialing 2 ringing-out 3 ringing-in 4 active 5 held 6 waiting 7 terminated."""
+    r = run(["mmcli", "-m", "any", "--voice-list-calls"])
+    states = []
+    for n in re.findall(r"/Call/(\d+)", r.stdout):
+        k = run(["mmcli", "-o", n, "-K"]).stdout
+        m = re.search(r"call\.properties\.state\s*:\s*(\S+)", k)
+        if m:
+            names = ["unknown", "dialing", "ringing-out", "ringing-in", "active", "held", "waiting", "terminated"]
+            if m.group(1) in names:
+                states.append(names.index(m.group(1)))
+    return states
+
+
+def monitor(wake, stop):
+    """Wake the main loop on every ModemManager call event."""
+    while not stop.is_set():
+        p = subprocess.Popen(["gdbus", "monitor", "--system", "--dest", "org.freedesktop.ModemManager1"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        for line in p.stdout:
+            if "/Call/" in line or "ModemManager1.Call" in line:
+                wake.set()
+        p.wait()
+        time.sleep(2)
+
+
+def main():
+    voiced = Voiced()
+    wake = threading.Event()
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set() or wake.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set() or wake.set())
+    threading.Thread(target=monitor, args=(wake, stop), daemon=True).start()
+    wake.set()
+    log("started")
+    while not stop.is_set():
+        wake.wait(1.0 if voiced.pcm else None)
+        wake.clear()
+        if stop.is_set():
+            break
+        try:
+            states = call_states()
+        except OSError:
+            states = []
+        live = [s for s in states if s in (1, 2, 3, 4, 5, 6)]
+        if not live:
+            voiced.stop()
+        else:
+            voiced.prepare()
+            if any(s in MM_CALL_ACTIVE for s in live):
+                voiced.start()
+                if voiced.pcm:
+                    voiced.follow()
+            elif voiced.pcm:
+                voiced.stop()
+                voiced.prepare()
+    voiced.stop()
+
+
+if __name__ == "__main__":
+    main()
