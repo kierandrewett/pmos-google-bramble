@@ -1,0 +1,380 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Select the modem's carrier configuration for the inserted SIM.
+
+The modem keeps carrier configurations (MCFG, from the .mbn files on the
+vendor partition) and uses one of them: it sets the bands, the IMS profile
+and the VoLTE and SMS-over-IMS settings. Android's radio daemon (qcrild)
+chooses and activates the configuration that fits the SIM. Nothing does that
+on postmarketOS, so the modem stays on a generic configuration without IMS,
+and networks that have no 2G or 3G (Three UK, for example) give no calls and
+no SMS.
+
+This daemon does what qcrild does:
+
+1. read the SIM's MCC and MNC (and the network name) from ModemManager;
+2. find the .mbn files whose trailer lists that MCC and MNC, and choose one
+   (a file named like the network wins);
+3. make sure the modem has it loaded (PDC load), then select and activate it.
+
+The modem keeps the choice across reboots, so after the first activation
+this only compares the active configuration with the wanted one.
+
+The modem's PDC service is spoken to directly over QRTR. qmicli's
+--pdc-load-config frees a mapped file and aborts.
+"""
+import glob
+import hashlib
+import os
+import re
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+MBN_DIR = "/run/msm-firmware-loader/target/mbn/mcfg_sw"
+AF_QIPCRTR = 42
+PDC_SERVICE = 36
+SOFTWARE = 1
+
+REGISTER = 0x20
+GET_SELECTED = 0x22
+SET_SELECTED = 0x23
+LIST_CONFIGS = 0x24
+DELETE_CONFIG = 0x25
+LOAD_CONFIG = 0x26
+ACTIVATE_CONFIG = 0x27
+GET_CONFIG_INFO = 0x28
+
+# Configurations the modem needs as a base; never deleted to make room.
+KEEP = ("SW_DEFAULT", "WildCard", "WildCard_IMS", "Global")
+
+
+def log(msg):
+    print("[bramble-mcfg] " + msg, file=sys.stderr, flush=True)
+
+
+class QmiError(Exception):
+    pass
+
+
+def tlv(t, value):
+    return struct.pack("<BH", t, len(value)) + value
+
+
+def parse_tlvs(data):
+    out = {}
+    pos = 0
+    while pos + 3 <= len(data):
+        t, ln = struct.unpack_from("<BH", data, pos)
+        out[t] = data[pos + 3:pos + 3 + ln]
+        pos += 3 + ln
+    return out
+
+
+class Pdc:
+    """The modem's persistent device configuration service (QMI over QRTR)."""
+
+    def __init__(self):
+        node, port = self.lookup()
+        self.addr = (node, port)
+        self.sock = socket.socket(AF_QIPCRTR, socket.SOCK_DGRAM)
+        self.sock.bind((1, 0))
+        self.txn = 1
+        self.token = 1
+        self.pending = []
+        self.request(REGISTER, [(0x10, b"\x01"), (0x11, b"\x01")])
+
+    @staticmethod
+    def lookup():
+        out = subprocess.run(["qrtr-lookup", str(PDC_SERVICE)], capture_output=True, text=True).stdout
+        for line in out.splitlines()[1:]:
+            cols = line.split()
+            if len(cols) >= 5 and int(cols[0]) == PDC_SERVICE:
+                return int(cols[3]), int(cols[4])
+        raise QmiError("PDC service not found")
+
+    def close(self):
+        self.sock.close()
+
+    def _recv(self, timeout):
+        self.sock.settimeout(timeout)
+        data, _ = self.sock.recvfrom(65536)
+        ctl, txn, msg, ln = struct.unpack_from("<BHHH", data, 0)
+        return ctl, txn, msg, parse_tlvs(data[7:7 + ln])
+
+    def request(self, msg, tlvs, timeout=10):
+        txn = self.txn
+        self.txn += 1
+        body = b"".join(tlv(t, v) for t, v in tlvs)
+        self.sock.sendto(struct.pack("<BHHH", 0, txn, msg, len(body)) + body, self.addr)
+        deadline = time.time() + timeout
+        while True:
+            left = deadline - time.time()
+            if left <= 0:
+                raise QmiError("timeout waiting for the response to 0x%x" % msg)
+            ctl, rtxn, rmsg, rt = self._recv(left)
+            if ctl == 0x04:
+                self.pending.append((rmsg, rt))
+                continue
+            if ctl == 0x02 and rtxn == txn:
+                res = rt.get(0x02)
+                if res is not None:
+                    status, err = struct.unpack("<HH", res)
+                    if status != 0:
+                        raise QmiError("message 0x%x failed with error %d" % (msg, err))
+                return rt
+
+    def indication(self, msg, token, timeout=30):
+        """Wait for the indication that carries this token; return its error and TLVs."""
+        deadline = time.time() + timeout
+        while True:
+            for i, (m, t) in enumerate(self.pending):
+                if m == msg and (0x10 not in t or struct.unpack("<I", t[0x10])[0] == token):
+                    del self.pending[i]
+                    err = struct.unpack("<H", t[0x01])[0] if 0x01 in t else 0
+                    return err, t
+            left = deadline - time.time()
+            if left <= 0:
+                raise QmiError("timeout waiting for indication 0x%x" % msg)
+            ctl, _, rmsg, rt = self._recv(left)
+            if ctl == 0x04:
+                self.pending.append((rmsg, rt))
+
+    def next_token(self):
+        t = self.token
+        self.token += 1
+        return t
+
+    def call(self, msg, tlvs, timeout=30):
+        """A request whose result comes in an indication with the same token."""
+        tok = self.next_token()
+        self.request(msg, tlvs + [(0x10, struct.pack("<I", tok))])
+        return self.indication(msg, tok, timeout)
+
+    def active_config(self):
+        err, t = self.call(GET_SELECTED, [(0x01, struct.pack("<I", SOFTWARE))])
+        if err != 0:
+            return b""
+        act = t.get(0x11, b"")
+        return act[1:1 + act[0]] if act else b""
+
+    def has_config(self, cid):
+        err, _ = self.call(GET_CONFIG_INFO, [(0x01, struct.pack("<IB", SOFTWARE, len(cid)) + cid)])
+        return err == 0
+
+    def config_names(self):
+        """Description and id of the first page of loaded configurations."""
+        err, t = self.call(LIST_CONFIGS, [(0x11, struct.pack("<I", SOFTWARE))])
+        out = []
+        data = t.get(0x11, b"")
+        if err == 0 and data:
+            pos = 1
+            for _ in range(data[0]):
+                n = data[pos + 4]
+                cid = data[pos + 5:pos + 5 + n]
+                pos += 5 + n
+                e, info = self.call(GET_CONFIG_INFO, [(0x01, struct.pack("<IB", SOFTWARE, len(cid)) + cid)])
+                desc = ""
+                if e == 0 and 0x12 in info:
+                    desc = info[0x12][1:1 + info[0x12][0]].decode("utf-8", "replace")
+                out.append((desc, cid))
+        return out
+
+    def delete(self, cid):
+        self.request(DELETE_CONFIG, [(0x01, struct.pack("<I", SOFTWARE)),
+                                     (0x10, struct.pack("<I", self.next_token())),
+                                     (0x11, struct.pack("<B", len(cid)) + cid)])
+        time.sleep(1)
+
+    def load(self, cid, data):
+        total = len(data)
+        offset = 0
+        while offset < total:
+            part = data[offset:offset + 900]
+            value = struct.pack("<IB", SOFTWARE, len(cid)) + cid + struct.pack("<IH", total, len(part)) + part
+            err, t = self.call(LOAD_CONFIG, [(0x01, value)])
+            if err != 0:
+                raise QmiError("loading the configuration failed with error %d" % err)
+            offset += len(part)
+            if 0x12 in t and struct.unpack("<I", t[0x12])[0] == 0:
+                break
+
+    def select_and_activate(self, cid):
+        err, _ = self.call(SET_SELECTED, [(0x01, struct.pack("<IB", SOFTWARE, len(cid)) + cid)])
+        if err != 0:
+            raise QmiError("selecting the configuration failed with error %d" % err)
+        # The modem answers the activation with an error although it switches
+        # (observed: 4), so judge by the selection afterwards.
+        try:
+            self.call(ACTIVATE_CONFIG, [(0x01, struct.pack("<I", SOFTWARE))], timeout=30)
+        except (QmiError, OSError) as e:
+            log("activation: %s" % e)
+        time.sleep(2)
+
+
+def mbn_info(path):
+    """(name, [(mcc, mnc)]) from the MCFG trailer of a configuration file."""
+    d = open(path, "rb").read()
+    tr = d.rfind(b"MCFG_TRL")
+    if tr < 0:
+        return None
+    body = d[tr + 8:]
+    pos = 5
+    name = ""
+    plmns = []
+    while pos + 3 <= len(body):
+        t, ln = struct.unpack_from("<BH", body, pos)
+        v = body[pos + 3:pos + 3 + ln]
+        pos += 3 + ln
+        if t == 3:
+            name = v.decode("utf-8", "replace")
+        elif t == 2 and len(v) == 4:
+            plmns.append(struct.unpack("<HH", v))
+        elif t == 6 and len(v) >= 2:
+            for i in range(v[1]):
+                if 2 + 4 * i + 4 <= len(v):
+                    plmns.append(struct.unpack_from("<HH", v, 2 + 4 * i))
+        elif t == 8:
+            break
+    return name, plmns
+
+
+def mm(*args):
+    return subprocess.run(["mmcli", *args], capture_output=True, text=True).stdout
+
+
+def sim_identity():
+    """(mcc, mnc, network name) of the SIM in the first modem, or None."""
+    m = re.search(r"modem\.generic\.sim\s*:\s*(\S+)", mm("-m", "any", "-K"))
+    if not m or m.group(1) == "--":
+        return None
+    sim = re.search(r"/SIM/(\d+)", m.group(1))
+    if not sim:
+        return None
+    k = mm("-i", sim.group(1), "-K")
+    code = re.search(r"sim\.properties\.operator-code\s*:\s*(\d+)", k)
+    if not code or len(code.group(1)) < 5:
+        return None
+    name = re.search(r"sim\.properties\.operator-name\s*:\s*(.+)", k)
+    net = re.search(r"modem\.3gpp\.operator-name\s*:\s*(.+)", mm("-m", "any", "-K"))
+    label = " ".join(x.group(1).strip() for x in (name, net) if x and x.group(1).strip() != "--")
+    return int(code.group(1)[:3]), int(code.group(1)[3:]), label.lower()
+
+
+def choose(mcc, mnc, label):
+    """The configuration file for this SIM, or None."""
+    found = []
+    for path in glob.glob(MBN_DIR + "/generic/**/mcfg_sw.mbn", recursive=True):
+        info = mbn_info(path)
+        if info and (mcc, mnc) in info[1]:
+            found.append((info[0], len(info[1]), path))
+    if not found:
+        return None
+
+    def rank(c):
+        name = c[0].lower()
+        named = any(w and w in name for w in re.split(r"[^a-z0-9]+", label) if len(w) > 2)
+        return (not named, "commercial" not in name, c[1], name)
+
+    found.sort(key=rank)
+    return found[0]
+
+
+def apply(pdc, mcc, mnc, label):
+    pick = choose(mcc, mnc, label)
+    if not pick:
+        log("no carrier configuration for %03d%02d" % (mcc, mnc))
+        return True
+    name, _, path = pick
+    data = open(path, "rb").read()
+    cid = hashlib.sha1(data).digest()
+    if pdc.active_config() == cid:
+        log("%s already active for %03d%02d" % (name, mcc, mnc))
+        return True
+    log("%03d%02d: using %s (%s)" % (mcc, mnc, name, os.path.relpath(path, MBN_DIR)))
+    if not pdc.has_config(cid):
+        for attempt in range(3):
+            try:
+                pdc.load(cid, data)
+                break
+            except QmiError as e:
+                log("load failed: %s" % e)
+                if attempt == 2:
+                    return False
+                # The modem stores few configurations: drop other carriers'.
+                active = pdc.active_config()
+                for desc, other in pdc.config_names():
+                    if desc not in KEEP and other != active:
+                        pdc.delete(other)
+                        log("removed %s" % desc)
+    pdc.select_and_activate(cid)
+    ok = pdc.active_config() == cid
+    log("%s %s" % (name, "active" if ok else "NOT active"))
+    return ok
+
+
+def wait_for_service():
+    for _ in range(180):
+        try:
+            return Pdc()
+        except (QmiError, OSError):
+            time.sleep(2)
+    return None
+
+
+def monitor(wake):
+    """Wake up when ModemManager adds a modem or SIM, or one changes."""
+    while True:
+        p = subprocess.Popen(["gdbus", "monitor", "--system", "--dest", "org.freedesktop.ModemManager1"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        for line in p.stdout:
+            if "/Sim/" in line or "InterfacesAdded" in line or "Modem/" in line and "Sim" in line:
+                wake.set()
+        p.wait()
+        time.sleep(5)
+
+
+def main():
+    if not os.path.isdir(MBN_DIR):
+        log("no carrier configurations in " + MBN_DIR)
+        return 1
+    wake = threading.Event()
+    threading.Thread(target=monitor, args=(wake,), daemon=True).start()
+    wake.set()
+    last = None
+    failures = 0
+    while True:
+        wake.wait(None if failures == 0 else 60)
+        wake.clear()
+        time.sleep(3)
+        ident = sim_identity()
+        if not ident or ident == last:
+            continue
+        pdc = wait_for_service()
+        if not pdc:
+            log("the modem's PDC service did not appear")
+            failures += 1
+            continue
+        try:
+            ok = apply(pdc, *ident)
+        except (QmiError, OSError) as e:
+            log("failed: %s" % e)
+            ok = False
+        finally:
+            pdc.close()
+        if ok:
+            last = ident
+            failures = 0
+        else:
+            failures += 1
+            if failures > 5:
+                log("giving up until the SIM changes")
+                last = ident
+                failures = 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

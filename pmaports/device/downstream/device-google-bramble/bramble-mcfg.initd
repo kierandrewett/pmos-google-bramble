@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# Select the modem's carrier configuration (IMS, VoLTE) for the SIM. See bramble-mcfg.
+supervisor=supervise-daemon
+name="bramble-mcfg"
+description="Select the modem carrier configuration for the inserted SIM"
+
+command=/usr/libexec/bramble-mcfg
+output_logger="logger -t bramble-mcfg"
+error_logger="logger -t bramble-mcfg"
+
+depend() {
+	need modemmanager bramble-modem
+	after 81voltd
+}

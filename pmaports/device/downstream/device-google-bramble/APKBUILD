@@ -3,7 +3,7 @@ maintainer="Yurii Bishchuk <astellias@gmail.com>"
 # Co-Maintainer: Kieran Drewett <kieran@drewett.dev>
 pkgname=device-google-bramble
 pkgver=2
-pkgrel=34
+pkgrel=37
 pkgdesc="Google Pixel 4a (5G) (SM7250 / Snapdragon 765G)"
 url="https://wiki.postmarketos.org/wiki/Google_Pixel_4a_(5G)_(google-bramble)"
 arch="aarch64"
@@ -16,10 +16,13 @@ depends="
 	bramble-android-hal
 	bramble-fingerprint
 	bramble-sensors
+	bramble-voice
+	glib
 	libdrm
 	linux-google-bramble
 	make-dynpart-mappings
 	mesa-vulkan-freedreno-kgsl
+	modemmanager
 	msm-firmware-loader
 	pd-mapper-openrc
 	python3
@@ -53,6 +56,8 @@ source="
 	bramble-display.sh
 	bramble-dsp.initd
 	bramble-modem.initd
+	bramble-mcfg
+	bramble-mcfg.initd
 	bramble-wlfw-bdf.py
 	bramble-gnss.initd
 	bramble-gnss.sh
@@ -92,6 +97,8 @@ package() {
 	install -Dm755 "$srcdir"/bramble-firmware.initd "$pkgdir"/etc/init.d/bramble-firmware
 	install -Dm755 "$srcdir"/bramble-dsp.initd "$pkgdir"/etc/init.d/bramble-dsp
 	install -Dm755 "$srcdir"/bramble-modem.initd "$pkgdir"/etc/init.d/bramble-modem
+	install -Dm755 "$srcdir"/bramble-mcfg "$pkgdir"/usr/libexec/bramble-mcfg
+	install -Dm755 "$srcdir"/bramble-mcfg.initd "$pkgdir"/etc/init.d/bramble-mcfg
 	install -Dm755 "$srcdir"/bramble-wlfw-bdf.py "$pkgdir"/usr/libexec/bramble-wlfw-bdf
 	install -Dm755 "$srcdir"/bramble-gnss.initd "$pkgdir"/etc/init.d/bramble-gnss
 	install -Dm755 "$srcdir"/bramble-gnss.sh "$pkgdir"/usr/libexec/bramble-gnss
@@ -154,6 +161,8 @@ c3679b2e1522d05f91032b093f0fd46b8956743dcf602dc9bfc5211abf9a1c964a3759db429d35dd
 eee3089287a8563d190be1c5da3806102ba78555f3822b4d1a4846c63d412a2db8d1f56c7304063f8e8cdf2eb417d648ae49b687ab3012ff5452ce5d0f8868c6  bramble-display.sh
 2109872d10ec06f4803b5a95eeea57755643d81a48a81f8720cf5178c07b78cd8208294ce4878db1a6a266acf6f01b503bb7fa31fc50246c17e7ab6c8e15867d  bramble-dsp.initd
 624f72146c7bad17201df6fc0392f9de0fa731bacef98fae34c8058668465229905c6f133b01d6905b0eed0273f2a8c38608546d58192123be55ef84ada9d2f9  bramble-modem.initd
+806cfaa2b3a40bf13447878d2bce80c438a720005d820337b31bda23963d224a5a741d0a51d1d98f3f811735651d00f97efac9ef3dac3f85c534be64607d297e  bramble-mcfg
+88ad4f6365d5c206962a3c990c194583f4fce03a2c09ed25394208c501aaa94a56adce736dd8cbbd46b60e460cfa6dff26389f31542a95fcf1cf90f9c291edcc  bramble-mcfg.initd
 7c24879b48e57c4535dcf0624b1c903abfe57cf140d08212972e76a5b2774f86b9987c11fd3388e6a9d6c011554d1e87505fdf58c6929fdae2f6964c72900ffc  bramble-wlfw-bdf.py
 07d5688976af0b44094f1721873851ebc77b20b483db6c93e460b0897ff3ea2beae48d26bbe8233d6cbe792fe83ca7f2c5c8ae049ab9d0c850c24d413eb7c8eb  bramble-gnss.initd
 b8c28b5d6b82d21e207088c19f432383d0be679409849abbc5ad40fa1a483a72418b42a0e02b9adfab44ee9f9ae0ca9e9edf09d358ddc8bd0ca2fb7232429be9  bramble-gnss.sh

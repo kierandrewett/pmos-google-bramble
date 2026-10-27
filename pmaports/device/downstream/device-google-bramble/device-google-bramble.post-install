@@ -10,6 +10,8 @@ rc-update -q add tqftpserv default
 rc-update -q add bramble-modem default
 # IMS Data service: the modem needs it before it brings up VoLTE.
 rc-update -q add 81voltd default
+# Selects the modem's carrier configuration (IMS) for the SIM.
+rc-update -q add bramble-mcfg default
 rc-update -q add bramble-dsp default
 rc-update -q add bramble-gnss default
 rc-update -q add bramble-ui-boost default

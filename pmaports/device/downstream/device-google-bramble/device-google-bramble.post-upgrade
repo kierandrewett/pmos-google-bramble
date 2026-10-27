@@ -18,5 +18,8 @@ fi
 if [ "$(apk version -t "$2" 2-r34)" = "<" ]; then
 	rc-update -q add 81voltd default
 fi
+if [ "$(apk version -t "$2" 2-r36)" = "<" ]; then
+	rc-update -q add bramble-mcfg default
+fi
 
 exit 0
