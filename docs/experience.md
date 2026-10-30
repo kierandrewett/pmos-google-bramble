@@ -57,10 +57,10 @@ a private container, for the cameras and the fingerprint reader.
 
 - Mobile data over LTE works, and reconnects after Wi-Fi is switched off and
   on. With a roaming SIM, it can take about 2.5 minutes to come up after boot.
-- SMS is sent over VoLTE (checked with `mmcli`), and the owner confirmed
+- SMS is sent over VoLTE (checked with `mmcli`), and the maintainer confirmed
   by hand that SMS works. Chatty has not been tested on its own.
 - Voice calls over VoLTE connect and carry audio both ways on the earpiece
-  (outgoing, tested to two mobile numbers), and the owner confirmed by hand
+  (outgoing, tested to two mobile numbers), and the maintainer confirmed by hand
   that calls work. The speaker button has not been tested on its own. RCS
   chat features are not supported.
 - GPS gets a fix and geoclue reports it. Apps get a position only when

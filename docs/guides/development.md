@@ -16,7 +16,7 @@ in the same directory layout, plus docs and scripts. The git history of
 | `scripts/setup-pmaports.sh` | Puts these packages into a pmaports checkout at the pinned commit. |
 | `scripts/ci.sh`, `scripts/check-versions.py` | The pmaports CI checks for this overlay (also run by `.github/workflows/ci.yml`). |
 | `justfile` | Shortcuts for the two scripts: `just setup`, `just ci [check...]`, `just secrets`. |
-| `tools/android-helpers/` | Source of the prebuilt `bramble-camera-ndk` and `bramble-camera-proxy` in `bramble-android-hal`. Build with the Android NDK: `tools/android-helpers/build.sh`. |
+| `tools/android-helpers/` | Source of the prebuilt `bramble-camera-ndk`, `bramble-camera-proxy` and `bramble-acdb` in `bramble-android-hal`. Build with the Android NDK: `tools/android-helpers/build.sh`. |
 | `tools/gnome-shell-probe/` | Runs stock GNOME Shell headless on the phone and saves a screenshot ([gnome-shell.md](../hardware/gnome-shell.md)). |
 | `docs/` | Documentation; the index is [docs/README.md](../README.md). |
 
@@ -59,7 +59,7 @@ Nothing is built from a private location. `pmbootstrap checksum --verify`
 | Kernel | LineageOS `android_kernel_google_redbull`, pinned by commit in `linux-google-bramble`, plus the patches in that directory. |
 | Mesa turnip | The Mesa release tarball from `archive.mesa3d.org`, plus a KGSL patch. |
 | Android system image for the HAL container | The Halium 14 GSI, from the Droidian package repository (`halium-gsi-34`). If that URL goes away, the build stops at the download: host the file and change `source=`. |
-| Camera helpers (`bramble-camera-ndk`, `bramble-camera-proxy`) | Committed as binaries in `bramble-android-hal`. Their source is in `tools/android-helpers/`; rebuild with the Android NDK (`tools/android-helpers/build.sh`). |
+| Android helpers (`bramble-camera-ndk`, `bramble-camera-proxy`, `bramble-acdb`) | Committed as binaries in `bramble-android-hal`. Their source is in `tools/android-helpers/`; rebuild with the Android NDK (`tools/android-helpers/build.sh`). |
 | Firmware (modem, Wi-Fi, audio DSP, GPU, touch) | Not in this repository. `msm-firmware-loader` reads it from your own phone's stock vendor partition at boot, which is why the stock Android 14 build must be on the phone ([install.md](install.md)). |
 | Everything else | Release tarballs from the projects' own sites (see `source=` in each APKBUILD). |
 

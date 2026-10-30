@@ -56,7 +56,9 @@ The full walk-through of daily use is in
 
 ## Installation
 
-Installing wipes the phone. You need:
+Installing wipes the phone, and a bad flash can leave it unusable. This
+software has no warranty. Back up the partitions that are unique to your
+phone first ([docs/guides/recovery.md](docs/guides/recovery.md)). You need:
 
 - A Pixel 4a (5G) with an unlockable bootloader, on the final stock
   firmware (Android 14, `UP1A.231105.001.B2`) with the stock `dtbo`. The
