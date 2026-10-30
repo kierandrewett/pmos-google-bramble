@@ -38,7 +38,7 @@ says how each item was checked and lists the known problems.
 | Wi-Fi | Works | |
 | Bluetooth | Works | Pairing, audio. Each phone gets its own address. |
 | Mobile data (LTE) | Works | |
-| SMS, voice calls, MMS | Partial | SMS, MMS and calls over VoLTE work on a Three UK SIM (MMS sent to a second phone, and a picture from another Three/Smarty number received and shown in Chatty). MMS from an O2/giffgaff number did not arrive in three tries: the phone got no notification. The speaker button is not tested. |
+| SMS, voice calls, MMS | Partial | SMS, MMS and calls over VoLTE work on a UK SIM (MMS sent to a second phone, and a picture from a number on the same network received and shown in Chatty). MMS from a number on a different network did not arrive in three tries: the phone got no notification. The speaker button is not tested. |
 | RCS | Not supported | Needs Google Play services. |
 | GPS | Works | Switch Location on in Settings. |
 | Audio: speakers, microphone, headphones | Works | Use PipeWire. PulseAudio does not switch to headphones. |
